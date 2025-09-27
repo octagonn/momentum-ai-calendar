@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import {
   StyleSheet,
   Text,
@@ -27,30 +27,74 @@ export default function HomeScreen() {
   console.log('Theme loaded:', { isDark, colors: !!colors });
 
   const { user } = useUser();
-  const { tasks, goals, toggleTask, getTasksStats } = useGoals();
+  const { tasks, goals, toggleTask, getTasksStats, getTodaysProgress } = useGoals();
   const stats = getTasksStats();
+  const todaysProgress = getTodaysProgress();
+
+  // Get today's tasks from goals
+  const getTodaysTasksFromGoals = () => {
+    const today = new Date();
+    const dayOfWeek = today.getDay();
+    const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+    const dayName = dayNames[dayOfWeek];
+    
+    const todaysTasks = [];
+    
+    goals.forEach(goal => {
+      if (goal.plan?.weeklyPlan) {
+        const weeklyPlan = goal.plan.weeklyPlan.find(plan => 
+          plan.day.toLowerCase() === dayName.toLowerCase()
+        );
+        
+        if (weeklyPlan) {
+          weeklyPlan.activities.forEach((activity, index) => {
+            todaysTasks.push({
+              id: `${goal.id}-${dayName}-${index}`,
+              title: activity,
+              time: `${weeklyPlan.duration}`,
+              priority: "medium" as const,
+              completed: false,
+              goalId: goal.id,
+              goalTitle: goal.title,
+            });
+          });
+        }
+      }
+    });
+    
+    return todaysTasks;
+  };
+
+  const todaysTasksFromGoals = getTodaysTasksFromGoals();
+  const allTodaysTasks = [...tasks, ...todaysTasksFromGoals];
   
-  const [animatedValues] = useState(() => 
-    tasks.map(() => new Animated.Value(1))
-  );
+  const [animatedValues, setAnimatedValues] = useState<Animated.Value[]>([]);
+
+  // Update animated values when tasks change
+  useEffect(() => {
+    setAnimatedValues(allTodaysTasks.map(() => new Animated.Value(1)));
+  }, [allTodaysTasks.length]);
 
   const handleToggleTask = async (taskId: string, index: number) => {
     if (Platform.OS !== "web") {
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
     
-    Animated.sequence([
-      Animated.timing(animatedValues[index], {
-        toValue: 0.95,
-        duration: 100,
-        useNativeDriver: true,
-      }),
-      Animated.timing(animatedValues[index], {
-        toValue: 1,
-        duration: 100,
-        useNativeDriver: true,
-      }),
-    ]).start();
+    // Safety check for animated values
+    if (animatedValues[index]) {
+      Animated.sequence([
+        Animated.timing(animatedValues[index], {
+          toValue: 0.95,
+          duration: 100,
+          useNativeDriver: true,
+        }),
+        Animated.timing(animatedValues[index], {
+          toValue: 1,
+          duration: 100,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    }
     
     toggleTask(taskId);
   };
@@ -109,10 +153,10 @@ export default function HomeScreen() {
   };
 
   const progressCards = [
-    { label: "Tasks Complete", value: `${stats.completed}/${stats.total}`, color: colors.primary },
+    { label: "Tasks Complete", value: `${todaysProgress.completedTasks}/${todaysProgress.totalTasks}`, color: colors.primary },
     { label: "Day Streak", value: user.dayStreak.toString(), color: colors.success },
-    { label: "Weekly Goal", value: `${stats.weeklyProgress}%`, color: colors.warning },
-    { label: "Goals Active", value: user.activeGoals.toString(), color: colors.info },
+    { label: "Today's Progress", value: `${todaysProgress.progressPercentage}%`, color: colors.warning },
+    { label: "Goals Active", value: goals.filter(g => g.status === 'active').length.toString(), color: colors.info },
   ];
 
   const { width } = Dimensions.get('window');
@@ -469,6 +513,12 @@ export default function HomeScreen() {
       textDecorationLine: 'line-through',
       color: colors.textMuted,
     },
+    taskGoal: {
+      fontSize: 12,
+      color: colors.primary,
+      fontWeight: "500" as const,
+      marginBottom: 4,
+    },
     taskTime: {
       fontSize: 13,
       color: colors.textSecondary,
@@ -540,6 +590,40 @@ export default function HomeScreen() {
     upcomingSubtitle: {
       fontSize: 13,
       color: colors.textSecondary,
+    },
+    motivationalSection: {
+      backgroundColor: colors.card,
+      borderRadius: 20,
+      padding: 20,
+      marginHorizontal: 20,
+      marginTop: 20,
+      borderWidth: isDark ? 1 : 0,
+      borderColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'transparent',
+      shadowColor: isDark ? 'rgba(0, 0, 0, 0.5)' : 'rgba(0, 0, 0, 0.1)',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.12,
+      shadowRadius: 12,
+      elevation: 3,
+    },
+    motivationalText: {
+      fontSize: 16,
+      fontWeight: '600',
+      textAlign: 'center',
+      lineHeight: 24,
+    },
+    emptyStateContainer: {
+      alignItems: 'center',
+      paddingVertical: 40,
+    },
+    emptyStateText: {
+      fontSize: 16,
+      fontWeight: '500',
+      color: colors.textSecondary,
+      marginBottom: 8,
+    },
+    emptyStateSubtext: {
+      fontSize: 14,
+      color: colors.textMuted,
     },
   });
 
@@ -653,7 +737,7 @@ export default function HomeScreen() {
             <Text style={styles.greeting}>
               {getGreeting()}, {user.name.split(" ")[0]}!
             </Text>
-            <Text style={styles.subtitle}>Ready to crush your goals today?</Text>
+            <Text style={styles.subtitle}>Let's make today productive!</Text>
             <View style={styles.dateContainer}>
               <Calendar size={16} color="#ffffff" />
               <Text style={styles.dateText}>{formatDate()}</Text>
@@ -685,6 +769,41 @@ export default function HomeScreen() {
           </View>
         </View>
 
+        {/* Motivational Message */}
+        {(() => {
+          const completedTasks = allTodaysTasks.filter(t => t.completed).length;
+          const totalTasks = allTodaysTasks.length;
+          const completionRate = totalTasks > 0 ? (completedTasks / totalTasks) * 100 : 0;
+          
+          let message = "";
+          let messageColor = colors.textSecondary;
+          
+          if (completionRate === 100 && totalTasks > 0) {
+            message = "🎉 Amazing! You've completed all your tasks today!";
+            messageColor = colors.success;
+          } else if (completionRate >= 75) {
+            message = "🔥 You're on fire! Keep up the great work!";
+            messageColor = colors.warning;
+          } else if (completionRate >= 50) {
+            message = "💪 Great progress! You're halfway there!";
+            messageColor = colors.primary;
+          } else if (totalTasks > 0) {
+            message = "🚀 Ready to tackle today's challenges?";
+            messageColor = colors.text;
+          } else {
+            message = "✨ Create a goal to get started with your journey!";
+            messageColor = colors.textSecondary;
+          }
+          
+          return (
+            <View style={styles.motivationalSection}>
+              <Text style={[styles.motivationalText, { color: messageColor }]}>
+                {message}
+              </Text>
+            </View>
+          );
+        })()}
+
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Today&apos;s Tasks</Text>
           <TouchableOpacity 
@@ -701,20 +820,20 @@ export default function HomeScreen() {
         <View style={styles.taskSection}>
           <View style={styles.taskCard}>
             <View style={styles.taskHeader}>
-              <Text style={styles.taskTitle}>Priority Tasks</Text>
+              <Text style={styles.taskTitle}>Today&apos;s Tasks</Text>
               <Text style={styles.taskSubtitle}>
-                {stats.total - stats.completed} remaining
+                {allTodaysTasks.filter(t => !t.completed).length} remaining
               </Text>
             </View>
 
-            {tasks.map((task, index) => (
+            {allTodaysTasks.length > 0 ? allTodaysTasks.map((task, index) => (
               <Animated.View
                 key={task.id}
-                style={[
-                  styles.taskItem,
-                  index === tasks.length - 1 && styles.taskItemLast,
-                  { transform: [{ scale: animatedValues[index] }] },
-                ]}
+                 style={[
+                   styles.taskItem,
+                   index === allTodaysTasks.length - 1 && styles.taskItemLast,
+                   { transform: [{ scale: animatedValues[index] || 1 }] },
+                 ]}
                 testID={`task-item-${index}`}
               >
                 <TouchableOpacity
@@ -737,6 +856,11 @@ export default function HomeScreen() {
                   >
                     {task.title}
                   </Text>
+                  {task.goalTitle && (
+                    <Text style={styles.taskGoal}>
+                      {task.goalTitle}
+                    </Text>
+                  )}
                   <View style={styles.timeContainer}>
                     <Clock size={12} color={colors.textSecondary} style={timeIconStyle} />
                     <Text style={styles.taskTime}>{task.time}</Text>
@@ -768,7 +892,12 @@ export default function HomeScreen() {
                   </Text>
                 </View>
               </Animated.View>
-            ))}
+            )) : (
+              <View style={styles.emptyStateContainer}>
+                <Text style={styles.emptyStateText}>No tasks for today</Text>
+                <Text style={styles.emptyStateSubtext}>Create a goal to get started!</Text>
+              </View>
+            )}
           </View>
         </View>
 
@@ -786,7 +915,7 @@ export default function HomeScreen() {
         </View>
 
         <View style={styles.upcomingSection}>
-          {goals.slice(0, 2).map((goal, index) => (
+          {goals.length > 0 ? goals.slice(0, 2).map((goal, index) => (
             <TouchableOpacity 
               key={`goal-${index}`} 
               style={styles.upcomingCard}
@@ -821,7 +950,12 @@ export default function HomeScreen() {
                 />
               </View>
             </TouchableOpacity>
-          ))}
+          )) : (
+            <View style={styles.emptyStateContainer}>
+              <Text style={styles.emptyStateText}>No goals yet</Text>
+              <Text style={styles.emptyStateSubtext}>Create your first goal to get started!</Text>
+            </View>
+          )}
         </View>
       </Animated.ScrollView>
     </View>

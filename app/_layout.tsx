@@ -1,4 +1,3 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import React, { useEffect } from "react";
@@ -10,11 +9,8 @@ import { UserProvider } from "@/providers/UserProvider";
 import { GoalsProvider } from "@/providers/GoalsProvider";
 import { SupabaseProvider } from "@/providers/SupabaseProvider";
 import ErrorBoundary from "@/components/ErrorBoundary";
-import { trpc, trpcClient } from "@/lib/trpc";
 
 SplashScreen.preventAutoHideAsync();
-
-const queryClient = new QueryClient();
 
 function RootLayoutNav() {
   return (
@@ -56,22 +52,18 @@ export default function RootLayout() {
   }
 
   return (
-    <trpc.Provider client={trpcClient} queryClient={queryClient}>
-      <QueryClientProvider client={queryClient}>
-        <GestureHandlerRootView style={styles.container}>
-          <ThemeProvider>
-            <UserProvider>
-              <SupabaseProvider>
-                <GoalsProvider>
-                  <ErrorBoundary testID="error-boundary-root">
-                    <RootLayoutNav />
-                  </ErrorBoundary>
-                </GoalsProvider>
-              </SupabaseProvider>
-            </UserProvider>
-          </ThemeProvider>
-        </GestureHandlerRootView>
-      </QueryClientProvider>
-    </trpc.Provider>
+    <GestureHandlerRootView style={styles.container}>
+      <ThemeProvider>
+        <UserProvider>
+          <SupabaseProvider>
+            <GoalsProvider>
+              <ErrorBoundary testID="error-boundary-root">
+                <RootLayoutNav />
+              </ErrorBoundary>
+            </GoalsProvider>
+          </SupabaseProvider>
+        </UserProvider>
+      </ThemeProvider>
+    </GestureHandlerRootView>
   );
 }

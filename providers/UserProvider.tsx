@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import createContextHook from "@nkzw/create-context-hook";
+import { supabase } from "@/lib/supabase-client";
 
 interface UserSettings {
   goalReminders: boolean;
@@ -22,10 +23,10 @@ interface UserContextType {
 }
 
 const defaultUser: User = {
-  name: "Alex Johnson",
-  email: "alex.johnson@email.com",
-  dayStreak: 47,
-  activeGoals: 12,
+  name: "",
+  email: "",
+  dayStreak: 0,
+  activeGoals: 0,
   settings: {
     goalReminders: true,
     weeklyReports: true,
@@ -38,6 +39,8 @@ export const [UserProvider, useUser] = createContextHook<UserContextType>(() => 
   const [user, setUser] = useState<User>(defaultUser);
 
   useEffect(() => {
+    // For now, just load from local storage
+    // In a real app, you'd implement user authentication with Supabase Auth
     loadUser();
   }, []);
 
@@ -55,8 +58,13 @@ export const [UserProvider, useUser] = createContextHook<UserContextType>(() => 
   const updateUser = useCallback(async (updates: Partial<User>) => {
     const updatedUser = { ...user, ...updates };
     setUser(updatedUser);
+    
     try {
+      // Save locally
       await AsyncStorage.setItem("user", JSON.stringify(updatedUser));
+      
+      // In a real app, you'd also update the user in Supabase
+      // For now, we'll just use local storage
     } catch (error) {
       console.error("Error saving user:", error);
     }

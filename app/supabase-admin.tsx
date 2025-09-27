@@ -116,110 +116,17 @@ export default function SupabaseAdmin() {
     // For this demo, we'll just try to insert data and let Supabase handle it
     // This assumes your Supabase instance has RLS policies set up correctly
     console.log('Creating tasks table...');
-    
-    // We're using upsert which will create entries if they don't exist
-    // This is a simplified approach for demo purposes
-    const defaultTasks: Record<string, unknown>[] = [
-      {
-        id: "1",
-        title: "Morning workout - Upper body",
-        time: "7:00 AM - 8:00 AM",
-        priority: "high",
-        completed: true,
-      },
-      {
-        id: "2",
-        title: "Project review meeting",
-        time: "10:00 AM - 11:00 AM",
-        priority: "medium",
-        completed: false,
-      },
-    ];
-    
-    await upsert('tasks', defaultTasks);
+    // Table creation only, no default data
   };
 
   const createGoalsTable = async () => {
     console.log('Creating goals table...');
-    
-    const defaultGoals: Record<string, unknown>[] = [
-      {
-        id: "1",
-        title: "Bench Press 225 lbs",
-        description: "185 lbs / 225 lbs",
-        current: 185,
-        target: 225,
-        unit: "lbs",
-        status: "active",
-        progress: 75,
-      },
-      {
-        id: "2",
-        title: "Read 24 Books This Year",
-        description: "14 books / 24 books",
-        current: 14,
-        target: 24,
-        unit: "books",
-        status: "active",
-        progress: 58,
-      },
-    ];
-    
-    await upsert('goals', defaultGoals);
+    // Table creation only, no default data
   };
 
   const seedDefaultData = async () => {
     console.log('Seeding default data...');
-    
-    const defaultTasks: Record<string, unknown>[] = [
-      {
-        id: "3",
-        title: 'Read 20 pages of "Atomic Habits"',
-        time: "2:00 PM - 2:30 PM",
-        priority: "low",
-        completed: false,
-      },
-      {
-        id: "4",
-        title: "Weekly meal prep",
-        time: "6:00 PM - 7:30 PM",
-        priority: "medium",
-        completed: true,
-      },
-      {
-        id: "5",
-        title: "Evening meditation",
-        time: "9:00 PM - 9:15 PM",
-        priority: "low",
-        completed: true,
-      },
-    ];
-    
-    const defaultGoals: Record<string, unknown>[] = [
-      {
-        id: "3",
-        title: "Learn Spanish",
-        description: "90 days / 300 days",
-        current: 90,
-        target: 300,
-        unit: "days",
-        status: "paused",
-        progress: 30,
-      },
-      {
-        id: "4",
-        title: "Run First Marathon",
-        description: "26.2 miles completed!",
-        current: 26.2,
-        target: 26.2,
-        unit: "miles",
-        status: "completed",
-        progress: 100,
-      },
-    ];
-    
-    await upsert('tasks', defaultTasks);
-    await upsert('goals', defaultGoals);
+    // No default data to seed
   };
 
   return (

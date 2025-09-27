@@ -1,10 +1,9 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { Platform } from "react-native";
 import createContextHook from "@nkzw/create-context-hook";
-import { useQueryClient } from "@tanstack/react-query";
 import { Task } from "@/types/task";
 import { Goal } from "@/types/goal";
-import { trpc } from "@/lib/trpc";
+import { supabase } from "@/lib/supabase-client";
 import { getItem, setItem } from "@/lib/storage";
 
 interface GoalsContextType {
@@ -13,98 +12,26 @@ interface GoalsContextType {
   toggleTask: (taskId: string) => void;
   updateGoal: (goalId: string, updates: Partial<Goal>) => void;
   addGoal: (goal: Goal) => Promise<void>;
+  deleteGoal: (goalId: string) => Promise<void>;
   isLoading: boolean;
   getTasksStats: () => {
     total: number;
     completed: number;
     weeklyProgress: number;
   };
+  getGoalProgress: (goal: Goal) => number;
+  getTodaysProgress: () => {
+    totalTasks: number;
+    completedTasks: number;
+    progressPercentage: number;
+  };
 }
 
-const defaultTasks: Task[] = [
-  {
-    id: "1",
-    title: "Morning workout - Upper body",
-    time: "7:00 AM - 8:00 AM",
-    priority: "high",
-    completed: true,
-  },
-  {
-    id: "2",
-    title: "Project review meeting",
-    time: "10:00 AM - 11:00 AM",
-    priority: "medium",
-    completed: false,
-  },
-  {
-    id: "3",
-    title: 'Read 20 pages of "Atomic Habits"',
-    time: "2:00 PM - 2:30 PM",
-    priority: "low",
-    completed: false,
-  },
-  {
-    id: "4",
-    title: "Weekly meal prep",
-    time: "6:00 PM - 7:30 PM",
-    priority: "medium",
-    completed: true,
-  },
-  {
-    id: "5",
-    title: "Evening meditation",
-    time: "9:00 PM - 9:15 PM",
-    priority: "low",
-    completed: true,
-  },
-];
-
-const defaultGoals: Goal[] = [
-  {
-    id: "1",
-    title: "Bench Press 225 lbs",
-    description: "185 lbs / 225 lbs",
-    current: 185,
-    target: 225,
-    unit: "lbs",
-    status: "active",
-    progress: 75,
-  },
-  {
-    id: "2",
-    title: "Read 24 Books This Year",
-    description: "14 books / 24 books",
-    current: 14,
-    target: 24,
-    unit: "books",
-    status: "active",
-    progress: 58,
-  },
-  {
-    id: "3",
-    title: "Learn Spanish",
-    description: "90 days / 300 days",
-    current: 90,
-    target: 300,
-    unit: "days",
-    status: "paused",
-    progress: 30,
-  },
-  {
-    id: "4",
-    title: "Run First Marathon",
-    description: "26.2 miles completed!",
-    current: 26.2,
-    target: 26.2,
-    unit: "miles",
-    status: "completed",
-    progress: 100,
-  },
-];
+const defaultTasks: Task[] = [];
+const defaultGoals: Goal[] = [];
 
 export const [GoalsProvider, useGoals] = createContextHook<GoalsContextType>(() => {
   console.log('GoalsProvider initializing');
-  const queryClient = useQueryClient();
   const [localTasks, setLocalTasks] = useState<Task[]>(defaultTasks);
   const [localGoals, setLocalGoals] = useState<Goal[]>(defaultGoals);
 
@@ -136,99 +63,86 @@ export const [GoalsProvider, useGoals] = createContextHook<GoalsContextType>(() 
     }
   };
 
-  // tRPC queries with fallback to local data
-  const tasksQuery = trpc.tasks.getTasks.useQuery(undefined, {
-    enabled: Platform.OS !== 'web', // Skip on web if Supabase not configured
-    retry: 2,
-    retryDelay: 1000,
-    staleTime: 30000, // 30 seconds
-  });
+  // Fetch data from Supabase
+  const [isLoading, setIsLoading] = useState(false);
 
-  const goalsQuery = trpc.goals.getGoals.useQuery(undefined, {
-    enabled: Platform.OS !== 'web', // Skip on web if Supabase not configured
-    retry: 2,
-    retryDelay: 1000,
-    staleTime: 30000, // 30 seconds
-  });
+  const fetchTasks = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      const { data, error } = await supabase
+        .from('momentum_tasks')
+        .select('*')
+        .order('created_at', { ascending: false });
 
-  // Sync server data to local storage when available
-  useEffect(() => {
-    if (tasksQuery.data && Array.isArray(tasksQuery.data)) {
-      setLocalTasks(tasksQuery.data);
-      setItem('tasks', JSON.stringify(tasksQuery.data)).catch((e) => {
-        console.warn('Failed to save tasks to local storage:', e);
-      });
-    }
-  }, [tasksQuery.data]);
-
-  useEffect(() => {
-    if (goalsQuery.data && Array.isArray(goalsQuery.data)) {
-      setLocalGoals(goalsQuery.data);
-      setItem('goals', JSON.stringify(goalsQuery.data)).catch((e) => {
-        console.warn('Failed to save goals to local storage:', e);
-      });
-    }
-  }, [goalsQuery.data]);
-
-  // Log query errors
-  useEffect(() => {
-    if (tasksQuery.error) {
-      console.warn('Failed to fetch tasks from server:', tasksQuery.error);
-    }
-  }, [tasksQuery.error]);
-
-  useEffect(() => {
-    if (goalsQuery.error) {
-      console.warn('Failed to fetch goals from server:', goalsQuery.error);
-    }
-  }, [goalsQuery.error]);
-
-  // Use server data if available, otherwise fall back to local data
-  const tasks = tasksQuery.data || localTasks;
-  const goals = goalsQuery.data || localGoals;
-  const isLoading = tasksQuery.isLoading || goalsQuery.isLoading;
-
-  // Task update mutation with optimistic updates
-  const updateTaskMutation = trpc.tasks.updateTask.useMutation({
-    onMutate: async ({ id, updates }) => {
-      // Cancel outgoing refetches
-      await queryClient.cancelQueries({ queryKey: [['tasks', 'getTasks']] });
-      
-      // Snapshot previous value
-      const previousTasks = queryClient.getQueryData([['tasks', 'getTasks']]) as Task[] || localTasks;
-      
-      // Optimistically update
-      const optimisticTasks = tasks.map((task) =>
-        task.id === id ? { ...task, ...updates } : task
-      );
-      
-      // Update query cache
-      queryClient.setQueryData([['tasks', 'getTasks']], optimisticTasks);
-      
-      // Update local state and storage
-      setLocalTasks(optimisticTasks);
-      setItem('tasks', JSON.stringify(optimisticTasks)).catch((e) => {
-        console.warn('Failed to save optimistic update to local storage:', e);
-      });
-      
-      return { previousTasks };
-    },
-    onError: (error, variables, context) => {
-      console.error('Task update failed:', error);
-      // Rollback on error
-      if (context?.previousTasks) {
-        queryClient.setQueryData([['tasks', 'getTasks']], context.previousTasks);
-        setLocalTasks(context.previousTasks as Task[]);
-        setItem('tasks', JSON.stringify(context.previousTasks)).catch(console.warn);
+      if (error) {
+        console.warn('Failed to fetch tasks from Supabase:', error);
+        return;
       }
-    },
-    onSettled: () => {
-      // Refetch to ensure we have the latest data
-      if (Platform.OS !== 'web') {
-        queryClient.invalidateQueries({ queryKey: [['tasks', 'getTasks']] });
+
+      if (data) {
+        // Convert Supabase data to our Task format
+        const tasks = data.map(task => ({
+          id: task.id,
+          title: task.title,
+          description: task.description || '',
+          completed: task.completed,
+          priority: task.priority,
+          time: task.due_date, // Using due_date as time for now
+          goalId: task.goal_id,
+        }));
+        setLocalTasks(tasks);
       }
-    },
-  });
+    } catch (error) {
+      console.warn('Error fetching tasks:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  const fetchGoals = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      const { data, error } = await supabase
+        .from('momentum_goals')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.warn('Failed to fetch goals from Supabase:', error);
+        return;
+      }
+
+      if (data) {
+        // Convert Supabase data to our Goal format
+        const goals = data.map(goal => ({
+          id: goal.id,
+          title: goal.title,
+          description: goal.description,
+          current: goal.current_value,
+          target: goal.target_value,
+          unit: goal.unit,
+          status: goal.status,
+          plan: goal.plan,
+          progress: goal.target_value > 0 ? Math.round((goal.current_value / goal.target_value) * 100) : 0,
+        }));
+        setLocalGoals(goals);
+      }
+    } catch (error) {
+      console.warn('Error fetching goals:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  // Load data on mount
+  useEffect(() => {
+    fetchTasks();
+    fetchGoals();
+  }, [fetchTasks, fetchGoals]);
+
+  // Use local data
+  const tasks = localTasks;
+  const goals = localGoals;
 
   const toggleTask = useCallback(async (taskId: string) => {
     const task = tasks.find(t => t.id === taskId);
@@ -236,128 +150,229 @@ export const [GoalsProvider, useGoals] = createContextHook<GoalsContextType>(() 
 
     const updates = { completed: !task.completed };
     
-    if (Platform.OS !== 'web') {
-      // Use tRPC mutation for server sync
-      updateTaskMutation.mutate({ id: taskId, updates });
-    } else {
-      // Web-only: just update local state and storage
-      const updatedTasks = tasks.map((t) =>
-        t.id === taskId ? { ...t, ...updates } : t
-      );
-      setLocalTasks(updatedTasks);
-      setItem('tasks', JSON.stringify(updatedTasks)).catch((error) => {
-        console.error('Error saving tasks:', error);
-      });
-    }
-  }, [tasks, updateTaskMutation]);
+    // Optimistic update
+    const updatedTasks = tasks.map((t) =>
+      t.id === taskId ? { ...t, ...updates } : t
+    );
+    setLocalTasks(updatedTasks);
+    
+    // Save to local storage
+    setItem('tasks', JSON.stringify(updatedTasks)).catch((error) => {
+      console.error('Error saving tasks locally:', error);
+    });
 
-  // Goal update mutation with optimistic updates
-  const updateGoalMutation = trpc.goals.updateGoal.useMutation({
-    onMutate: async ({ id, updates }) => {
-      await queryClient.cancelQueries({ queryKey: [['goals', 'getGoals']] });
-      
-      const previousGoals = queryClient.getQueryData([['goals', 'getGoals']]) as Goal[] || localGoals;
-      
-      const optimisticGoals = goals.map((goal) =>
-        goal.id === id ? { ...goal, ...updates } : goal
-      );
-      
-      queryClient.setQueryData([['goals', 'getGoals']], optimisticGoals);
-      setLocalGoals(optimisticGoals);
-      setItem('goals', JSON.stringify(optimisticGoals)).catch((e) => {
-        console.warn('Failed to save optimistic goal update to local storage:', e);
-      });
-      
-      return { previousGoals };
-    },
-    onError: (error, variables, context) => {
-      console.error('Goal update failed:', error);
-      if (context?.previousGoals) {
-        queryClient.setQueryData([['goals', 'getGoals']], context.previousGoals);
-        setLocalGoals(context.previousGoals as Goal[]);
-        setItem('goals', JSON.stringify(context.previousGoals)).catch(console.warn);
+    // Update in Supabase
+    try {
+      const { error } = await supabase
+        .from('momentum_tasks')
+        .update({ completed: updates.completed })
+        .eq('id', taskId);
+
+      if (error) {
+        console.error('Failed to update task in Supabase:', error);
+        // Rollback optimistic update
+        setLocalTasks(tasks);
+        setItem('tasks', JSON.stringify(tasks)).catch(console.warn);
       }
-    },
-    onSettled: () => {
-      if (Platform.OS !== 'web') {
-        queryClient.invalidateQueries({ queryKey: [['goals', 'getGoals']] });
-      }
-    },
-  });
+    } catch (error) {
+      console.error('Error updating task:', error);
+      // Rollback optimistic update
+      setLocalTasks(tasks);
+      setItem('tasks', JSON.stringify(tasks)).catch(console.warn);
+    }
+  }, [tasks]);
 
   const updateGoal = useCallback(async (goalId: string, updates: Partial<Goal>) => {
-    if (Platform.OS !== 'web') {
-      updateGoalMutation.mutate({ id: goalId, updates });
-    } else {
-      const updatedGoals = goals.map((g) =>
-        g.id === goalId ? { ...g, ...updates } : g
-      );
-      setLocalGoals(updatedGoals);
-      setItem('goals', JSON.stringify(updatedGoals)).catch((error) => {
-        console.error('Error saving goals:', error);
-      });
-    }
-  }, [goals, updateGoalMutation]);
+    // Optimistic update
+    const updatedGoals = goals.map((g) =>
+      g.id === goalId ? { ...g, ...updates } : g
+    );
+    setLocalGoals(updatedGoals);
+    
+    // Save to local storage
+    setItem('goals', JSON.stringify(updatedGoals)).catch((error) => {
+      console.error('Error saving goals locally:', error);
+    });
 
-  // Add goal mutation
-  const addGoalMutation = trpc.goals.createGoal.useMutation({
-    onMutate: async (newGoal) => {
-      await queryClient.cancelQueries({ queryKey: [['goals', 'getGoals']] });
+    // Update in Supabase
+    try {
+      const supabaseUpdates: any = {};
       
-      const previousGoals = queryClient.getQueryData([['goals', 'getGoals']]) as Goal[] || localGoals;
-      // Create optimistic goal with temporary ID
-      const optimisticGoal = { ...newGoal, id: `temp-${Date.now()}` };
-      const optimisticGoals = [...goals, optimisticGoal];
-      
-      queryClient.setQueryData([['goals', 'getGoals']], optimisticGoals);
-      setLocalGoals(optimisticGoals);
-      setItem('goals', JSON.stringify(optimisticGoals)).catch((e) => {
-        console.warn('Failed to save new goal to local storage:', e);
-      });
-      
-      return { previousGoals };
-    },
-    onError: (error, variables, context) => {
-      console.error('Add goal failed:', error);
-      if (context?.previousGoals) {
-        queryClient.setQueryData([['goals', 'getGoals']], context.previousGoals);
-        setLocalGoals(context.previousGoals as Goal[]);
-        setItem('goals', JSON.stringify(context.previousGoals)).catch(console.warn);
+      // Map our Goal format to Supabase format
+      if (updates.title !== undefined) supabaseUpdates.title = updates.title;
+      if (updates.description !== undefined) supabaseUpdates.description = updates.description;
+      if (updates.current !== undefined) supabaseUpdates.current_value = updates.current;
+      if (updates.target !== undefined) supabaseUpdates.target_value = updates.target;
+      if (updates.unit !== undefined) supabaseUpdates.unit = updates.unit;
+      if (updates.status !== undefined) supabaseUpdates.status = updates.status;
+      if (updates.plan !== undefined) supabaseUpdates.plan = updates.plan;
+
+      const { error } = await supabase
+        .from('momentum_goals')
+        .update(supabaseUpdates)
+        .eq('id', goalId);
+
+      if (error) {
+        console.error('Failed to update goal in Supabase:', error);
+        // Rollback optimistic update
+        setLocalGoals(goals);
+        setItem('goals', JSON.stringify(goals)).catch(console.warn);
       }
-    },
-    onSettled: () => {
-      if (Platform.OS !== 'web') {
-        queryClient.invalidateQueries({ queryKey: [['goals', 'getGoals']] });
-      }
-    },
-  });
+    } catch (error) {
+      console.error('Error updating goal:', error);
+      // Rollback optimistic update
+      setLocalGoals(goals);
+      setItem('goals', JSON.stringify(goals)).catch(console.warn);
+    }
+  }, [goals]);
 
   const addGoal = useCallback(async (newGoal: Goal) => {
     if (!newGoal.title) {
       throw new Error('Goal must have title');
     }
     
-    if (Platform.OS !== 'web') {
-      // Remove id for backend creation (backend generates it)
-      const { id, ...goalData } = newGoal;
-      addGoalMutation.mutate(goalData);
-    } else {
-      const updatedGoals = [...goals, newGoal];
-      setLocalGoals(updatedGoals);
-      setItem('goals', JSON.stringify(updatedGoals)).catch((error) => {
-        console.error('Error saving new goal:', error);
+    // Create optimistic goal with temporary ID
+    const optimisticGoal = { ...newGoal, id: `temp-${Date.now()}` };
+    const optimisticGoals = [...goals, optimisticGoal];
+    setLocalGoals(optimisticGoals);
+    
+    // Save to local storage
+    setItem('goals', JSON.stringify(optimisticGoals)).catch((error) => {
+      console.error('Error saving new goal locally:', error);
+    });
+
+    // Create in Supabase
+    try {
+      const { data, error } = await supabase
+        .from('momentum_goals')
+        .insert({
+          title: newGoal.title,
+          description: newGoal.description,
+          current_value: newGoal.current || 0,
+          target_value: newGoal.target,
+          unit: newGoal.unit,
+          status: newGoal.status || 'active',
+          plan: newGoal.plan,
+          start_date: new Date().toISOString(),
+          target_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(), // 30 days from now
+        })
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Failed to create goal in Supabase:', error);
+        // Rollback optimistic update
+        setLocalGoals(goals);
+        setItem('goals', JSON.stringify(goals)).catch(console.warn);
         throw error;
-      });
+      }
+
+      if (data) {
+        // Replace optimistic goal with real data
+        const realGoal = {
+          id: data.id,
+          title: data.title,
+          description: data.description,
+          current: data.current_value,
+          target: data.target_value,
+          unit: data.unit,
+          status: data.status,
+          plan: data.plan,
+          progress: data.target_value > 0 ? Math.round((data.current_value / data.target_value) * 100) : 0,
+        };
+        
+        const finalGoals = goals.map(g => g.id === optimisticGoal.id ? realGoal : g);
+        setLocalGoals(finalGoals);
+        setItem('goals', JSON.stringify(finalGoals)).catch(console.warn);
+      }
+    } catch (error) {
+      console.error('Error creating goal:', error);
+      // Rollback optimistic update
+      setLocalGoals(goals);
+      setItem('goals', JSON.stringify(goals)).catch(console.warn);
+      throw error;
     }
-  }, [goals, addGoalMutation]);
+  }, [goals]);
+
+  const deleteGoal = useCallback(async (goalId: string) => {
+    // Optimistic update
+    const updatedGoals = goals.filter(g => g.id !== goalId);
+    setLocalGoals(updatedGoals);
+    
+    // Save to local storage
+    setItem('goals', JSON.stringify(updatedGoals)).catch((error) => {
+      console.error('Error saving goals locally:', error);
+    });
+
+    // Delete from Supabase
+    try {
+      const { error } = await supabase
+        .from('momentum_goals')
+        .delete()
+        .eq('id', goalId);
+
+      if (error) {
+        console.error('Failed to delete goal in Supabase:', error);
+        // Rollback optimistic update
+        setLocalGoals(goals);
+        setItem('goals', JSON.stringify(goals)).catch(console.warn);
+        throw error;
+      }
+    } catch (error) {
+      console.error('Error deleting goal:', error);
+      // Rollback optimistic update
+      setLocalGoals(goals);
+      setItem('goals', JSON.stringify(goals)).catch(console.warn);
+      throw error;
+    }
+  }, [goals]);
 
   const getTasksStats = useCallback(() => {
     const completed = tasks.filter((t) => t.completed).length;
     const total = tasks.length;
-    const weeklyProgress = Math.round((completed / total) * 85); // Simulated weekly progress
+    const weeklyProgress = total > 0 ? Math.round((completed / total) * 100) : 0;
     
     return { total, completed, weeklyProgress };
   }, [tasks]);
+
+  // Enhanced progress tracking for goals
+  const getGoalProgress = useCallback((goal: Goal) => {
+    if (goal.target === 0) return 0;
+    return Math.round((goal.current / goal.target) * 100);
+  }, []);
+
+  // Get today's progress across all goals
+  const getTodaysProgress = useCallback(() => {
+    const today = new Date();
+    const dayOfWeek = today.getDay();
+    const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+    const dayName = dayNames[dayOfWeek];
+    
+    let totalTasks = 0;
+    let completedTasks = 0;
+    
+    goals.forEach(goal => {
+      if (goal.plan?.weeklyPlan) {
+        const weeklyPlan = goal.plan.weeklyPlan.find(plan => 
+          plan.day.toLowerCase() === dayName.toLowerCase()
+        );
+        
+        if (weeklyPlan) {
+          totalTasks += weeklyPlan.activities.length;
+          // For now, we'll use a simple completion rate based on goal progress
+          // In a real implementation, you'd track individual task completion
+          const goalProgress = getGoalProgress(goal);
+          completedTasks += Math.round((weeklyPlan.activities.length * goalProgress) / 100);
+        }
+      }
+    });
+    
+    return {
+      totalTasks,
+      completedTasks,
+      progressPercentage: totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0
+    };
+  }, [goals, getGoalProgress]);
 
   return useMemo(() => ({
     tasks,
@@ -365,7 +380,10 @@ export const [GoalsProvider, useGoals] = createContextHook<GoalsContextType>(() 
     toggleTask,
     updateGoal,
     addGoal,
+    deleteGoal,
     isLoading,
     getTasksStats,
-  }), [tasks, goals, toggleTask, updateGoal, addGoal, isLoading, getTasksStats]);
+    getGoalProgress,
+    getTodaysProgress,
+  }), [tasks, goals, toggleTask, updateGoal, addGoal, deleteGoal, isLoading, getTasksStats, getGoalProgress, getTodaysProgress]);
 });
