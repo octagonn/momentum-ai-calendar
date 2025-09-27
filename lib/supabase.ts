@@ -84,6 +84,28 @@ export async function patch<T extends Record<string, unknown>>(table: string, ma
   return matchRes ? Number(matchRes[1]) : 0;
 }
 
+export async function deleteFromTable<T extends Record<string, unknown>>(table: string, match: Record<string, string | number>, env?: SupabaseEnv): Promise<number> {
+  const cfg = env ?? getEnv();
+  const headers = getHeaders(cfg);
+  if (!cfg || !headers) {
+    console.log("Supabase not configured. Skipping delete.");
+    return 0;
+  }
+  const query = Object.entries(match)
+    .map(([k, v]) => `${encodeURIComponent(k)}=eq.${encodeURIComponent(String(v))}`)
+    .join("&");
+  const url = `${cfg.url}/rest/v1/${encodeURIComponent(table)}?${query}`;
+  const res = await fetch(url, { method: "DELETE", headers });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Supabase delete error ${res.status}: ${text}`);
+  }
+  const contentRange = res.headers.get("content-range");
+  if (!contentRange) return 0;
+  const matchRes = /\d+-\d+\/(\d+)/.exec(contentRange);
+  return matchRes ? Number(matchRes[1]) : 0;
+}
+
 export function isWeb() {
   return Platform.OS === "web";
 }

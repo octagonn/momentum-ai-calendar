@@ -137,7 +137,7 @@ export default function SettingsScreen() {
     },
     headerBackground: {
       position: 'absolute',
-      top: 0,
+      top: -insets.top,
       left: 0,
       right: 0,
       height: 180 + insets.top,
@@ -148,7 +148,7 @@ export default function SettingsScreen() {
     },
     patternOverlay: {
       position: 'absolute',
-      top: 0,
+      top: -insets.top,
       left: 0,
       right: 0,
       height: 180 + insets.top,
@@ -160,7 +160,7 @@ export default function SettingsScreen() {
     },
     gradientOverlay: {
       position: 'absolute',
-      top: 0,
+      top: -insets.top,
       left: 0,
       right: 0,
       height: 180 + insets.top,

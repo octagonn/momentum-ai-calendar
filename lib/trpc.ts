@@ -5,20 +5,8 @@ import superjson from "superjson";
 
 export const trpc = createTRPCReact<AppRouter>();
 
-const getBaseUrl = () => {
-  if (process.env.EXPO_PUBLIC_RORK_API_BASE_URL) {
-    return process.env.EXPO_PUBLIC_RORK_API_BASE_URL;
-  }
-
-  // Fallback for development
-  if (__DEV__) {
-    return "http://localhost:3000";
-  }
-
-  throw new Error(
-    "No base url found, please set EXPO_PUBLIC_RORK_API_BASE_URL"
-  );
-};
+// We're no longer using tRPC - everything goes through Supabase directly
+// This file can be removed or kept for future use
 
 let trpcClient: ReturnType<typeof trpc.createClient>;
 
@@ -37,7 +25,7 @@ try {
   trpcClient = trpc.createClient({
     links: [
       httpLink({
-        url: "http://localhost:3000/api/trpc",
+        url: "http://localhost:3001/api/trpc",
         transformer: superjson,
       }),
     ],

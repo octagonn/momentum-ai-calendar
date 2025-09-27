@@ -28,10 +28,10 @@ export default function ChatScreen() {
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<Message[]>([
     {
-      id: "1",
-      text: "Hi! I'm your AI coach. I'm here to help you plan and achieve your goals. What would you like to work on today?",
+      id: "welcome",
+      text: "👋 Hi there! I'm your AI coach and I'm here to help you achieve your goals.\n\n**What would you like to work on today?**\n\nI can help you:\n• Set up new goals and break them into actionable steps\n• Plan your week and organize your tasks\n• Review your progress and suggest improvements\n• Build new habits and routines\n• Overcome obstacles and stay motivated\n\nJust tell me what's on your mind, or use one of the quick actions below to get started!",
       role: "ai",
-      timestamp: new Date(Date.now() - 3600000),
+      timestamp: new Date(),
     },
   ]);
 
@@ -132,7 +132,6 @@ export default function ChatScreen() {
     container: {
       flex: 1,
       backgroundColor: colors.primary,
-      paddingTop: insets.top,
     },
     patternLine: {
       position: 'absolute',
@@ -198,7 +197,7 @@ export default function ChatScreen() {
       left: 0,
       right: 0,
       bottom: 0,
-      zIndex: -1,
+      zIndex: 0,
     },
     gradientBackground: {
       position: 'absolute',
@@ -230,7 +229,7 @@ export default function ChatScreen() {
     messagesContainer: {
       flex: 1,
       paddingHorizontal: 20,
-      paddingTop: 20,
+      paddingTop: Math.max(20, insets.top + 20),
       zIndex: 10,
     },
     messagesCard: {

@@ -14,12 +14,14 @@ import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Clock, Plus } from
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import { useTheme } from "@/providers/ThemeProvider";
+import { useGoals } from "@/providers/GoalsProvider";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 type ViewType = "month" | "week" | "day" | "year";
 
 export default function CalendarScreen() {
   const { colors, isDark } = useTheme();
+  const { goals, tasks, toggleTask } = useGoals();
   const insets = useSafeAreaInsets();
   const { width } = Dimensions.get('window');
   const scrollY = useRef(new Animated.Value(0)).current;
@@ -33,6 +35,47 @@ export default function CalendarScreen() {
   ];
 
   const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+  // Get tasks for a specific date
+  const getTasksForDate = (date: Date) => {
+    const dateStr = date.toISOString().split('T')[0];
+    return tasks.filter(task => {
+      // For now, we'll use the existing task structure
+      // Later we'll integrate with goal-generated tasks
+      return task.time && task.time.includes(dateStr);
+    });
+  };
+
+  // Generate tasks from goals for a specific date
+  const generateTasksFromGoals = (date: Date) => {
+    const tasksForDate = [];
+    const dayOfWeek = date.getDay();
+    const dayName = dayNames[dayOfWeek];
+
+    goals.forEach(goal => {
+      if (goal.plan?.weeklyPlan) {
+        const weeklyPlan = goal.plan.weeklyPlan.find(plan => 
+          plan.day.toLowerCase() === dayName.toLowerCase()
+        );
+        
+        if (weeklyPlan) {
+          weeklyPlan.activities.forEach((activity, index) => {
+            tasksForDate.push({
+              id: `${goal.id}-${dayName}-${index}`,
+              title: activity,
+              time: `${weeklyPlan.duration}`,
+              priority: "medium" as const,
+              completed: false,
+              goalId: goal.id,
+              goalTitle: goal.title,
+            });
+          });
+        }
+      }
+    });
+
+    return tasksForDate;
+  };
 
   const getDaysInMonth = (date: Date) => {
     return new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
@@ -129,7 +172,11 @@ export default function CalendarScreen() {
     
     // Current month days
     for (let day = 1; day <= daysInMonth; day++) {
-      const hasEvent = Math.random() > 0.8;
+      const dayDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), day);
+      const dayTasks = [...getTasksForDate(dayDate), ...generateTasksFromGoals(dayDate)];
+      const hasEvent = dayTasks.length > 0;
+      const completedTasks = dayTasks.filter(task => task.completed).length;
+      const totalTasks = dayTasks.length;
       
       days.push(
         <TouchableOpacity
@@ -152,7 +199,12 @@ export default function CalendarScreen() {
             {day}
           </Text>
           {hasEvent && (
-            <View style={[styles.eventDot, { backgroundColor: colors.primary }]} />
+            <View style={styles.eventIndicator}>
+              <View style={[styles.eventDot, { backgroundColor: colors.primary }]} />
+              {totalTasks > 1 && (
+                <Text style={styles.taskCount}>{totalTasks}</Text>
+              )}
+            </View>
           )}
         </TouchableOpacity>
       );
@@ -241,7 +293,7 @@ export default function CalendarScreen() {
     },
     headerBackground: {
       position: 'absolute',
-      top: 0,
+      top: -insets.top,
       left: 0,
       right: 0,
       height: 180 + insets.top,
@@ -252,7 +304,7 @@ export default function CalendarScreen() {
     },
     patternOverlay: {
       position: 'absolute',
-      top: 0,
+      top: -insets.top,
       left: 0,
       right: 0,
       height: 180 + insets.top,
@@ -264,7 +316,7 @@ export default function CalendarScreen() {
     },
     gradientOverlay: {
       position: 'absolute',
-      top: 0,
+      top: -insets.top,
       left: 0,
       right: 0,
       height: 180 + insets.top,
@@ -452,6 +504,109 @@ export default function CalendarScreen() {
       borderRadius: 2,
       marginTop: 2,
     },
+    eventIndicator: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginTop: 2,
+    },
+    taskCount: {
+      fontSize: 10,
+      fontWeight: '600',
+      color: colors.primary,
+      marginLeft: 2,
+    },
+    selectedDateContainer: {
+      backgroundColor: colors.card,
+      borderRadius: 20,
+      padding: 20,
+      marginTop: 20,
+      marginHorizontal: 20,
+      borderWidth: isDark ? 1 : 0,
+      borderColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'transparent',
+      shadowColor: isDark ? 'rgba(0, 0, 0, 0.5)' : 'rgba(0, 0, 0, 0.1)',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.12,
+      shadowRadius: 12,
+      elevation: 3,
+    },
+    selectedDateTitle: {
+      fontSize: 18,
+      fontWeight: '600',
+      color: colors.text,
+      marginBottom: 16,
+    },
+    tasksList: {
+      gap: 12,
+    },
+    taskItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      padding: 16,
+      backgroundColor: colors.background,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)',
+    },
+    completedTask: {
+      opacity: 0.6,
+    },
+    taskContent: {
+      flex: 1,
+      marginRight: 12,
+    },
+    taskTitle: {
+      fontSize: 16,
+      fontWeight: '500',
+      color: colors.text,
+      marginBottom: 4,
+    },
+    completedTaskText: {
+      textDecorationLine: 'line-through',
+      color: colors.textSecondary,
+    },
+    taskGoal: {
+      fontSize: 12,
+      color: colors.primary,
+      fontWeight: '500',
+      marginBottom: 2,
+    },
+    taskTime: {
+      fontSize: 12,
+      color: colors.textSecondary,
+    },
+    taskCheckbox: {
+      width: 24,
+      height: 24,
+      borderRadius: 12,
+      borderWidth: 2,
+      borderColor: colors.border,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    taskCheckboxCompleted: {
+      backgroundColor: colors.primary,
+      borderColor: colors.primary,
+    },
+    checkmark: {
+      color: 'white',
+      fontSize: 14,
+      fontWeight: 'bold',
+    },
+    noTasksContainer: {
+      alignItems: 'center',
+      paddingVertical: 40,
+    },
+    noTasksText: {
+      fontSize: 16,
+      fontWeight: '500',
+      color: colors.textSecondary,
+      marginBottom: 8,
+    },
+    noTasksSubtext: {
+      fontSize: 14,
+      color: colors.textMuted,
+    },
   });
 
   return (
@@ -600,6 +755,63 @@ export default function CalendarScreen() {
           
           <View style={styles.daysGrid}>{renderCalendarDays()}</View>
         </View>
+
+        {/* Selected Date Tasks */}
+        {selectedDate && (
+          <View style={styles.selectedDateContainer}>
+            <Text style={styles.selectedDateTitle}>
+              {dayNames[selectedDate.getDay()]}, {monthNames[selectedDate.getMonth()]} {selectedDate.getDate()}
+            </Text>
+            {(() => {
+              const dayTasks = [...getTasksForDate(selectedDate), ...generateTasksFromGoals(selectedDate)];
+              return dayTasks.length > 0 ? (
+                <View style={styles.tasksList}>
+                  {dayTasks.map((task, index) => (
+                    <TouchableOpacity
+                      key={`${task.id}-${index}`}
+                      style={[
+                        styles.taskItem,
+                        task.completed && styles.completedTask,
+                      ]}
+                      onPress={() => toggleTask(task.id)}
+                      activeOpacity={0.7}
+                    >
+                      <View style={styles.taskContent}>
+                        <Text style={[
+                          styles.taskTitle,
+                          task.completed && styles.completedTaskText,
+                        ]}>
+                          {task.title}
+                        </Text>
+                        {task.goalTitle && (
+                          <Text style={styles.taskGoal}>
+                            {task.goalTitle}
+                          </Text>
+                        )}
+                        <Text style={styles.taskTime}>
+                          {task.time}
+                        </Text>
+                      </View>
+                      <View style={[
+                        styles.taskCheckbox,
+                        task.completed && styles.taskCheckboxCompleted,
+                      ]}>
+                        {task.completed && (
+                          <Text style={styles.checkmark}>✓</Text>
+                        )}
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              ) : (
+                <View style={styles.noTasksContainer}>
+                  <Text style={styles.noTasksText}>No tasks for this day</Text>
+                  <Text style={styles.noTasksSubtext}>Create a goal to see tasks here</Text>
+                </View>
+              );
+            })()}
+          </View>
+        )}
       </Animated.ScrollView>
       
       <TouchableOpacity 

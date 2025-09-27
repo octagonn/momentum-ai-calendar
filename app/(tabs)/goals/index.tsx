@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+import React, { useRef, useState, useEffect } from "react";
 import {
   StyleSheet,
   Text,
@@ -7,6 +7,7 @@ import {
   Platform,
   Animated,
   StatusBar,
+  Alert,
 } from "react-native";
 import { Plus } from "lucide-react-native";
 import * as Haptics from "expo-haptics";
@@ -15,13 +16,191 @@ import { useTheme } from "@/providers/ThemeProvider";
 import { useGoals } from "@/providers/GoalsProvider";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import GoalCreationModal from "@/components/GoalCreationModal";
+import GoalDetailModal from "@/components/GoalDetailModal";
+// Removed tRPC import - using Supabase directly
+
+interface GoalCardProps {
+  goal: any;
+  statusColor: string;
+  progressPercentage: number;
+  onPress: () => void;
+}
+
+function GoalCard({ goal, statusColor, progressPercentage, onPress }: GoalCardProps) {
+  const { colors, isDark } = useTheme();
+  const { getGoalProgress } = useGoals();
+  const progressAnimation = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.timing(progressAnimation, {
+      toValue: Math.min(progressPercentage, 100),
+      duration: 800,
+      useNativeDriver: false,
+    }).start();
+  }, [progressPercentage]);
+
+  const styles = StyleSheet.create({
+    goalCard: {
+      backgroundColor: colors.card,
+      borderRadius: 20,
+      padding: 24,
+      marginBottom: 20,
+      borderWidth: isDark ? 1 : 0,
+      borderColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'transparent',
+      shadowColor: isDark ? 'rgba(0, 0, 0, 0.5)' : 'rgba(0, 0, 0, 0.08)',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.12,
+      shadowRadius: 12,
+      elevation: 3,
+    },
+    goalHeader: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      marginBottom: 16,
+    },
+    goalTitle: {
+      fontSize: 18,
+      fontWeight: "600" as const,
+      color: colors.text,
+      flex: 1,
+      marginRight: 8,
+    },
+    statusBadge: {
+      paddingHorizontal: 12,
+      paddingVertical: 4,
+      borderRadius: 12,
+    },
+    statusText: {
+      fontSize: 12,
+      fontWeight: "600" as const,
+      textTransform: "capitalize" as const,
+    },
+    progressSection: {
+      marginBottom: 16,
+    },
+    progressBar: {
+      height: 10,
+      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.08)',
+      borderRadius: 5,
+      overflow: "hidden",
+      marginBottom: 8,
+    },
+    progressFill: {
+      height: "100%",
+      borderRadius: 5,
+    },
+    progressText: {
+      fontSize: 14,
+      color: colors.textSecondary,
+      fontWeight: "500" as const,
+      marginTop: 4,
+    },
+    goalDescription: {
+      fontSize: 14,
+      color: colors.textSecondary,
+      lineHeight: 20,
+      marginTop: 8,
+    },
+    progressInfo: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginTop: 4,
+    },
+    progressDetails: {
+      fontSize: 12,
+      color: colors.textMuted,
+      fontWeight: '500',
+    },
+    milestoneInfo: {
+      marginTop: 8,
+      paddingTop: 8,
+      borderTopWidth: 1,
+      borderTopColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.05)',
+    },
+    milestoneText: {
+      fontSize: 12,
+      color: colors.primary,
+      fontWeight: '500',
+    },
+  });
+
+  return (
+    <TouchableOpacity 
+      style={styles.goalCard}
+      onPress={onPress}
+      activeOpacity={0.7}
+    >
+      <View style={styles.goalHeader}>
+        <Text style={styles.goalTitle} numberOfLines={1}>
+          {goal.title}
+        </Text>
+        <View
+          style={[
+            styles.statusBadge,
+            { backgroundColor: `${statusColor}15` },
+          ]}
+        >
+          <Text style={[styles.statusText, { color: statusColor }]}>
+            {goal.status}
+          </Text>
+        </View>
+      </View>
+
+      <View style={styles.progressSection}>
+        <View style={styles.progressBar}>
+          <Animated.View
+            style={[
+              styles.progressFill,
+              {
+                width: progressAnimation.interpolate({
+                  inputRange: [0, 100],
+                  outputRange: ['0%', '100%'],
+                  extrapolate: 'clamp',
+                }),
+                backgroundColor: statusColor,
+              },
+            ]}
+          />
+        </View>
+        <View style={styles.progressInfo}>
+          <Text style={styles.progressText}>
+            {Math.round(progressPercentage)}% complete
+          </Text>
+          <Text style={styles.progressDetails}>
+            {goal.current} / {goal.target} {goal.unit}
+          </Text>
+        </View>
+      </View>
+
+      <Text style={styles.goalDescription} numberOfLines={2}>
+        {goal.description}
+      </Text>
+
+      {goal.plan?.milestones && (
+        <View style={styles.milestoneInfo}>
+          <Text style={styles.milestoneText}>
+            {goal.plan.milestones.length} milestones
+          </Text>
+        </View>
+      )}
+    </TouchableOpacity>
+  );
+}
 
 export default function GoalsScreen() {
   const { colors, isDark } = useTheme();
-  const { goals, isLoading, addGoal } = useGoals();
+  const { goals, isLoading, addGoal, getGoalProgress } = useGoals();
   const insets = useSafeAreaInsets();
   const scrollY = useRef(new Animated.Value(0)).current;
   const [showGoalCreationModal, setShowGoalCreationModal] = useState(false);
+  const [selectedGoal, setSelectedGoal] = useState<any>(null);
+  const [showGoalDetailModal, setShowGoalDetailModal] = useState(false);
+  const [editingGoal, setEditingGoal] = useState<any>(null);
+
+  // Using GoalsProvider methods instead of tRPC
+  const { updateGoal, deleteGoal } = useGoals();
 
 
 
@@ -40,6 +219,96 @@ export default function GoalsScreen() {
     } catch (error) {
       console.error('Error creating goal:', error);
     }
+  };
+
+  const handleGoalPress = (goal: any) => {
+    setSelectedGoal(goal);
+    setShowGoalDetailModal(true);
+  };
+
+  const handleEditGoal = () => {
+    if (!selectedGoal) return;
+    
+    // Close the detail modal first
+    setShowGoalDetailModal(false);
+    
+    // Open the creation modal in edit mode
+    setShowGoalCreationModal(true);
+    setEditingGoal(selectedGoal);
+  };
+
+  const handlePauseGoal = async () => {
+    if (!selectedGoal) return;
+    
+    try {
+      // Update goal status to paused
+      await updateGoal.mutateAsync({
+        id: selectedGoal.id,
+        updates: {
+          status: selectedGoal.status === 'paused' ? 'active' : 'paused'
+        }
+      });
+      
+      // Close the modal
+      setShowGoalDetailModal(false);
+      setSelectedGoal(null);
+      
+      // Show success message
+      Alert.alert(
+        'Goal Updated',
+        `Goal ${selectedGoal.status === 'paused' ? 'resumed' : 'paused'} successfully!`,
+        [{ text: 'OK' }]
+      );
+    } catch (error) {
+      console.error('Error updating goal:', error);
+      Alert.alert(
+        'Error',
+        'Failed to update goal. Please try again.',
+        [{ text: 'OK' }]
+      );
+    }
+  };
+
+  const handleDeleteGoal = () => {
+    if (!selectedGoal) return;
+    
+    Alert.alert(
+      'Delete Goal',
+      `Are you sure you want to delete "${selectedGoal.title}"? This action cannot be undone.`,
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteGoal.mutateAsync(selectedGoal.id);
+              
+              // Close the modal
+              setShowGoalDetailModal(false);
+              setSelectedGoal(null);
+              
+              // Show success message
+              Alert.alert(
+                'Goal Deleted',
+                'Goal deleted successfully!',
+                [{ text: 'OK' }]
+              );
+            } catch (error) {
+              console.error('Error deleting goal:', error);
+              Alert.alert(
+                'Error',
+                'Failed to delete goal. Please try again.',
+                [{ text: 'OK' }]
+              );
+            }
+          },
+        },
+      ]
+    );
   };
 
   const getStatusColor = (status: string) => {
@@ -110,7 +379,7 @@ export default function GoalsScreen() {
     },
     headerBackground: {
       position: 'absolute',
-      top: 0,
+      top: -insets.top,
       left: 0,
       right: 0,
       height: 180 + insets.top,
@@ -121,7 +390,7 @@ export default function GoalsScreen() {
     },
     patternOverlay: {
       position: 'absolute',
-      top: 0,
+      top: -insets.top,
       left: 0,
       right: 0,
       height: 180 + insets.top,
@@ -133,7 +402,7 @@ export default function GoalsScreen() {
     },
     gradientOverlay: {
       position: 'absolute',
-      top: 0,
+      top: -insets.top,
       left: 0,
       right: 0,
       height: 180 + insets.top,
@@ -165,6 +434,32 @@ export default function GoalsScreen() {
       fontWeight: "500" as const,
       fontFamily: 'Inter_500Medium',
       letterSpacing: 0.3,
+      marginBottom: 20,
+    },
+    createGoalButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: 'rgba(255, 255, 255, 0.2)',
+      borderRadius: 16,
+      paddingHorizontal: 20,
+      paddingVertical: 12,
+      borderWidth: 1,
+      borderColor: 'rgba(255, 255, 255, 0.3)',
+      shadowColor: 'rgba(0, 0, 0, 0.2)',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.1,
+      shadowRadius: 4,
+      elevation: 2,
+    },
+    createGoalIcon: {
+      marginRight: 8,
+    },
+    createGoalText: {
+      color: 'white',
+      fontSize: 16,
+      fontWeight: '600' as const,
+      fontFamily: 'Inter_600SemiBold',
     },
     addButton: {
       position: 'absolute',
@@ -190,60 +485,6 @@ export default function GoalsScreen() {
       paddingHorizontal: 20,
       paddingTop: 20,
     },
-    goalCard: {
-      backgroundColor: colors.card,
-      borderRadius: 24,
-      padding: 20,
-      marginBottom: 16,
-      borderWidth: isDark ? 1 : 0,
-      borderColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'transparent',
-      shadowColor: isDark ? 'rgba(0, 0, 0, 0.5)' : 'rgba(0, 0, 0, 0.1)',
-      shadowOffset: { width: 0, height: 6 },
-      shadowOpacity: 0.15,
-      shadowRadius: 16,
-      elevation: 4,
-    },
-    goalHeader: {
-      flexDirection: "row",
-      justifyContent: "space-between",
-      alignItems: "center",
-      marginBottom: 16,
-    },
-    goalTitle: {
-      fontSize: 18,
-      fontWeight: "600" as const,
-      color: colors.text,
-      flex: 1,
-      marginRight: 8,
-    },
-    statusBadge: {
-      paddingHorizontal: 12,
-      paddingVertical: 4,
-      borderRadius: 12,
-    },
-    statusText: {
-      fontSize: 12,
-      fontWeight: "600" as const,
-      textTransform: "capitalize" as const,
-    },
-    progressSection: {
-      marginBottom: 16,
-    },
-    progressBar: {
-      height: 8,
-      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.05)',
-      borderRadius: 4,
-      overflow: "hidden",
-      marginBottom: 8,
-    },
-    progressFill: {
-      height: "100%",
-      borderRadius: 4,
-    },
-    progressText: {
-      fontSize: 14,
-      color: colors.textSecondary,
-    },
 
     syncingIndicator: {
       position: 'absolute',
@@ -262,6 +503,24 @@ export default function GoalsScreen() {
     syncingText: {
       color: colors.text,
       fontSize: 12,
+    },
+    emptyStateContainer: {
+      alignItems: 'center',
+      paddingVertical: 60,
+      paddingHorizontal: 20,
+    },
+    emptyStateText: {
+      fontSize: 18,
+      fontWeight: '600',
+      color: colors.text,
+      marginBottom: 8,
+      textAlign: 'center',
+    },
+    emptyStateSubtext: {
+      fontSize: 14,
+      color: colors.textSecondary,
+      textAlign: 'center',
+      lineHeight: 20,
     },
   });
 
@@ -336,6 +595,16 @@ export default function GoalsScreen() {
         <View style={styles.headerContent}>
           <Text style={styles.headerTitle}>Your Goals</Text>
           <Text style={styles.headerSubtitle}>Track your progress and celebrate achievements</Text>
+          
+          <TouchableOpacity 
+            style={styles.createGoalButton}
+            activeOpacity={0.8}
+            onPress={handleAddGoal}
+            disabled={isLoading}
+          >
+            <Plus size={20} color="white" style={styles.createGoalIcon} />
+            <Text style={styles.createGoalText}>Create New Goal</Text>
+          </TouchableOpacity>
         </View>
       </Animated.View>
 
@@ -349,45 +618,25 @@ export default function GoalsScreen() {
         scrollEventThrottle={16}
       >
         <View style={styles.goalsGrid}>
-          {goals.map((goal) => {
+          {goals.length > 0 ? goals.map((goal) => {
             const statusColor = getStatusColor(goal.status);
             const progressPercentage = (goal.current / goal.target) * 100;
 
             return (
-              <View key={goal.id} style={styles.goalCard}>
-                <View style={styles.goalHeader}>
-                  <Text style={styles.goalTitle}>{goal.title}</Text>
-                  <View
-                    style={[
-                      styles.statusBadge,
-                      { backgroundColor: `${statusColor}15` },
-                    ]}
-                  >
-                    <Text style={[styles.statusText, { color: statusColor }]}>
-                      {goal.status}
-                    </Text>
-                  </View>
-                </View>
-
-                <View style={styles.progressSection}>
-                  <View style={styles.progressBar}>
-                    <View
-                      style={[
-                        styles.progressFill,
-                        {
-                          width: `${Math.min(progressPercentage, 100)}%`,
-                          backgroundColor: statusColor,
-                        },
-                      ]}
-                    />
-                  </View>
-                  <Text style={styles.progressText}>
-                    {goal.description}
-                  </Text>
-                </View>
-              </View>
+              <GoalCard
+                key={goal.id}
+                goal={goal}
+                statusColor={statusColor}
+                progressPercentage={progressPercentage}
+                onPress={() => handleGoalPress(goal)}
+              />
             );
-          })}
+          }) : (
+            <View style={styles.emptyStateContainer}>
+              <Text style={styles.emptyStateText}>No goals yet</Text>
+              <Text style={styles.emptyStateSubtext}>Create your first goal to start tracking your progress!</Text>
+            </View>
+          )}
         </View>
       </Animated.ScrollView>
       
@@ -407,10 +656,23 @@ export default function GoalsScreen() {
         </View>
       )}
       
-      <GoalCreationModal
-        visible={showGoalCreationModal}
-        onClose={() => setShowGoalCreationModal(false)}
-        onGoalCreated={handleGoalCreated}
+        <GoalCreationModal
+          visible={showGoalCreationModal}
+          onClose={() => {
+            setShowGoalCreationModal(false);
+            setEditingGoal(null);
+          }}
+          onGoalCreated={handleGoalCreated}
+          editingGoal={editingGoal}
+        />
+      
+      <GoalDetailModal
+        visible={showGoalDetailModal}
+        goal={selectedGoal}
+        onClose={() => setShowGoalDetailModal(false)}
+        onEdit={handleEditGoal}
+        onPause={handlePauseGoal}
+        onDelete={handleDeleteGoal}
       />
     </View>
   );
