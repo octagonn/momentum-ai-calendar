@@ -8,6 +8,8 @@ import { ThemeProvider } from "@/providers/ThemeProvider";
 import { UserProvider } from "@/providers/UserProvider";
 import { GoalsProvider } from "@/providers/GoalsProvider";
 import { SupabaseProvider } from "@/providers/SupabaseProvider";
+import { AuthProvider } from "@/providers/AuthProvider";
+import { ProtectedRoute } from "@/components/ProtectedRoute";
 import ErrorBoundary from "@/components/ErrorBoundary";
 
 SplashScreen.preventAutoHideAsync();
@@ -16,6 +18,8 @@ function RootLayoutNav() {
   return (
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+      <Stack.Screen name="auth/callback" options={{ headerShown: false }} />
+      <Stack.Screen name="auth/reset-password" options={{ headerShown: false }} />
     </Stack>
   );
 }
@@ -54,15 +58,19 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={styles.container}>
       <ThemeProvider>
-        <UserProvider>
-          <SupabaseProvider>
-            <GoalsProvider>
-              <ErrorBoundary testID="error-boundary-root">
-                <RootLayoutNav />
-              </ErrorBoundary>
-            </GoalsProvider>
-          </SupabaseProvider>
-        </UserProvider>
+        <AuthProvider>
+          <UserProvider>
+            <SupabaseProvider>
+              <GoalsProvider>
+                <ErrorBoundary testID="error-boundary-root">
+                  <ProtectedRoute>
+                    <RootLayoutNav />
+                  </ProtectedRoute>
+                </ErrorBoundary>
+              </GoalsProvider>
+            </SupabaseProvider>
+          </UserProvider>
+        </AuthProvider>
       </ThemeProvider>
     </GestureHandlerRootView>
   );
