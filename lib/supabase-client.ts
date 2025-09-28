@@ -1,93 +1,46 @@
 import { createClient } from '@supabase/supabase-js';
+import { Platform } from 'react-native';
 
-const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
+const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
+const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
-
-// Database types
-export interface Database {
-  public: {
-    Tables: {
-      momentum_goals: {
-        Row: {
-          id: string;
-          title: string;
-          description: string;
-          current_value: number;
-          target_value: number;
-          unit: string;
-          status: 'active' | 'paused' | 'completed';
-          plan: any;
-          start_date: string;
-          target_date: string;
-          created_at: string;
-          updated_at: string;
-        };
-        Insert: {
-          id?: string;
-          title: string;
-          description: string;
-          current_value?: number;
-          target_value: number;
-          unit: string;
-          status?: 'active' | 'paused' | 'completed';
-          plan?: any;
-          start_date?: string;
-          target_date?: string;
-          created_at?: string;
-          updated_at?: string;
-        };
-        Update: {
-          id?: string;
-          title?: string;
-          description?: string;
-          current_value?: number;
-          target_value?: number;
-          unit?: string;
-          status?: 'active' | 'paused' | 'completed';
-          plan?: any;
-          start_date?: string;
-          target_date?: string;
-          created_at?: string;
-          updated_at?: string;
-        };
-      };
-      momentum_tasks: {
-        Row: {
-          id: string;
-          title: string;
-          description: string;
-          completed: boolean;
-          priority: 'low' | 'medium' | 'high';
-          due_date: string;
-          goal_id: string;
-          created_at: string;
-          updated_at: string;
-        };
-        Insert: {
-          id?: string;
-          title: string;
-          description?: string;
-          completed?: boolean;
-          priority?: 'low' | 'medium' | 'high';
-          due_date: string;
-          goal_id: string;
-          created_at?: string;
-          updated_at?: string;
-        };
-        Update: {
-          id?: string;
-          title?: string;
-          description?: string;
-          completed?: boolean;
-          priority?: 'low' | 'medium' | 'high';
-          due_date?: string;
-          goal_id?: string;
-          created_at?: string;
-          updated_at?: string;
-        };
-      };
-    };
+// Create a fallback for when Supabase is not configured
+const createFallbackClient = () => {
+  return {
+    from: () => ({
+      select: () => ({ data: [], error: null }),
+      insert: () => ({ data: [], error: null }),
+      update: () => ({ data: [], error: null }),
+      delete: () => ({ data: [], error: null }),
+      eq: () => ({ data: [], error: null }),
+    }),
+    auth: {
+      getUser: () => Promise.resolve({ data: { user: null }, error: null }),
+    },
   };
-}
+};
+
+// Create Supabase client with fallback
+export const supabase = supabaseUrl && supabaseAnonKey 
+  ? createClient(supabaseUrl, supabaseAnonKey)
+  : createFallbackClient();
+
+// Test connection
+export const testSupabaseConnection = async () => {
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return { connected: false, message: "Supabase not configured" };
+  }
+
+  try {
+    const { data, error } = await supabase.from('momentum_goals').select('count').limit(1);
+    if (error) {
+      return { connected: false, message: `Connection error: ${error.message}` };
+    }
+    return { connected: true, message: "Successfully connected to Supabase" };
+  } catch (error) {
+    return { 
+      connected: false, 
+      message: `Connection error: ${error instanceof Error ? error.message : String(error)}` 
+    };
+  }
+};

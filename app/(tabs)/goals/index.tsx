@@ -237,37 +237,6 @@ export default function GoalsScreen() {
     setEditingGoal(selectedGoal);
   };
 
-  const handlePauseGoal = async () => {
-    if (!selectedGoal) return;
-    
-    try {
-      // Update goal status to paused
-      await updateGoal.mutateAsync({
-        id: selectedGoal.id,
-        updates: {
-          status: selectedGoal.status === 'paused' ? 'active' : 'paused'
-        }
-      });
-      
-      // Close the modal
-      setShowGoalDetailModal(false);
-      setSelectedGoal(null);
-      
-      // Show success message
-      Alert.alert(
-        'Goal Updated',
-        `Goal ${selectedGoal.status === 'paused' ? 'resumed' : 'paused'} successfully!`,
-        [{ text: 'OK' }]
-      );
-    } catch (error) {
-      console.error('Error updating goal:', error);
-      Alert.alert(
-        'Error',
-        'Failed to update goal. Please try again.',
-        [{ text: 'OK' }]
-      );
-    }
-  };
 
   const handleDeleteGoal = () => {
     if (!selectedGoal) return;
@@ -285,7 +254,7 @@ export default function GoalsScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              await deleteGoal.mutateAsync(selectedGoal.id);
+              await deleteGoal(selectedGoal.id);
               
               // Close the modal
               setShowGoalDetailModal(false);
@@ -671,7 +640,6 @@ export default function GoalsScreen() {
         goal={selectedGoal}
         onClose={() => setShowGoalDetailModal(false)}
         onEdit={handleEditGoal}
-        onPause={handlePauseGoal}
         onDelete={handleDeleteGoal}
       />
     </View>

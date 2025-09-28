@@ -13,19 +13,23 @@ import {
   Modal,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
-import { Crown, Shield, FileText, Trash2, X } from "lucide-react-native";
+import { Crown, Shield, FileText, Trash2, X, Database } from "lucide-react-native";
 import * as Haptics from "expo-haptics";
 import { useTheme } from "@/providers/ThemeProvider";
 import { useUser } from "@/providers/UserProvider";
+import { useAuth } from "@/providers/AuthProvider";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { SupabaseDashboard } from "@/components/SupabaseDashboard";
 
 export default function SettingsScreen() {
   const { colors, isDark, toggleTheme } = useTheme();
   const { user, updateUser } = useUser();
+  const { signOut } = useAuth();
   const insets = useSafeAreaInsets();
   const scrollY = useRef(new Animated.Value(0)).current;
   const [privacyModalVisible, setPrivacyModalVisible] = useState<boolean>(false);
   const [termsModalVisible, setTermsModalVisible] = useState<boolean>(false);
+  const [supabaseDashboardVisible, setSupabaseDashboardVisible] = useState<boolean>(false);
 
   const handleToggle = async (setting: string, value: boolean) => {
     if (Platform.OS !== "web") {
@@ -80,6 +84,16 @@ export default function SettingsScreen() {
     }
     console.log('Delete account pressed');
     // Could show confirmation dialog
+  };
+
+  const handleLogout = async () => {
+    if (Platform.OS !== "web") {
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    }
+    const { error } = await signOut();
+    if (error) {
+      console.error('Logout error:', error);
+    }
   };
 
   const styles = StyleSheet.create({
@@ -339,6 +353,14 @@ export default function SettingsScreen() {
     },
     dangerButtonText: {
       color: colors.danger,
+    },
+    logoutButton: {
+      backgroundColor: colors.background,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    logoutButtonText: {
+      color: colors.text,
     },
     modalOverlay: {
       flex: 1,
@@ -711,6 +733,55 @@ export default function SettingsScreen() {
             </View>
           </View>
         </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Database Management</Text>
+          
+          <View style={styles.settingItem}>
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <Text style={styles.settingLabel}>Supabase Dashboard</Text>
+                <Text style={styles.settingDescription}>
+                  Manage database, users, and system health
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={styles.actionButton}
+                activeOpacity={0.7}
+                onPress={() => setSupabaseDashboardVisible(true)}
+                testID="supabase-dashboard-button"
+              >
+                <Database size={16} color={colors.text} />
+                <Text style={styles.actionButtonText}>Open</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Account Actions</Text>
+          
+          <View style={[styles.settingItem, styles.settingItemLast]}>
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <Text style={styles.settingLabel}>Sign Out</Text>
+                <Text style={styles.settingDescription}>
+                  Sign out of your account
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={[styles.actionButton, styles.logoutButton]}
+                activeOpacity={0.7}
+                onPress={handleLogout}
+                testID="logout-button"
+              >
+                <Text style={[styles.actionButtonText, styles.logoutButtonText]}>
+                  Sign Out
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
       </Animated.ScrollView>
 
       {/* Privacy Policy Modal */}
@@ -908,6 +979,16 @@ export default function SettingsScreen() {
             </ScrollView>
           </View>
         </View>
+      </Modal>
+
+      {/* Supabase Dashboard Modal */}
+      <Modal
+        visible={supabaseDashboardVisible}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={() => setSupabaseDashboardVisible(false)}
+      >
+        <SupabaseDashboard onClose={() => setSupabaseDashboardVisible(false)} />
       </Modal>
     </View>
   );

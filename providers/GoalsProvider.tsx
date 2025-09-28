@@ -11,7 +11,7 @@ interface GoalsContextType {
   goals: Goal[];
   toggleTask: (taskId: string) => void;
   updateGoal: (goalId: string, updates: Partial<Goal>) => void;
-  addGoal: (goal: Goal) => Promise<void>;
+  addGoal: (goal: Goal, tasks?: any[]) => Promise<void>;
   deleteGoal: (goalId: string) => Promise<void>;
   isLoading: boolean;
   getTasksStats: () => {
@@ -165,7 +165,10 @@ export const [GoalsProvider, useGoals] = createContextHook<GoalsContextType>(() 
     try {
       const { error } = await supabase
         .from('momentum_tasks')
-        .update({ completed: updates.completed })
+        .update({ 
+          completed: updates.completed,
+          status: updates.completed ? 'completed' : 'pending'
+        })
         .eq('id', taskId);
 
       if (error) {
@@ -173,6 +176,23 @@ export const [GoalsProvider, useGoals] = createContextHook<GoalsContextType>(() 
         // Rollback optimistic update
         setLocalTasks(tasks);
         setItem('tasks', JSON.stringify(tasks)).catch(console.warn);
+      } else {
+        // Update goal progress if this task is linked to a goal
+        const task = updatedTasks.find(t => t.id === taskId);
+        if (task && task.goal_id) {
+          const goalTasks = updatedTasks.filter(t => t.goal_id === task.goal_id);
+          const completedGoalTasks = goalTasks.filter(t => t.completed || t.status === 'completed').length;
+          const goalProgress = goalTasks.length > 0 ? Math.round((completedGoalTasks / goalTasks.length) * 100) : 0;
+          
+          // Update goal progress in database
+          await supabase
+            .from('momentum_goals')
+            .update({ 
+              progress_percentage: goalProgress,
+              current_value: completedGoalTasks
+            })
+            .eq('id', task.goal_id);
+        }
       }
     } catch (error) {
       console.error('Error updating task:', error);
@@ -226,7 +246,7 @@ export const [GoalsProvider, useGoals] = createContextHook<GoalsContextType>(() 
     }
   }, [goals]);
 
-  const addGoal = useCallback(async (newGoal: Goal) => {
+  const addGoal = useCallback(async (newGoal: Goal, tasks?: any[]) => {
     if (!newGoal.title) {
       throw new Error('Goal must have title');
     }
@@ -248,11 +268,14 @@ export const [GoalsProvider, useGoals] = createContextHook<GoalsContextType>(() 
         .insert({
           title: newGoal.title,
           description: newGoal.description,
-          current_value: newGoal.current || 0,
-          target_value: newGoal.target,
+          category: newGoal.category || 'personal',
+          current_value: newGoal.current_value || 0,
+          target_value: newGoal.target_value,
           unit: newGoal.unit,
           status: newGoal.status || 'active',
+          progress_percentage: newGoal.progress_percentage || 0,
           plan: newGoal.plan,
+          user_id: newGoal.user_id,
           start_date: new Date().toISOString(),
           target_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(), // 30 days from now
         })
@@ -261,6 +284,14 @@ export const [GoalsProvider, useGoals] = createContextHook<GoalsContextType>(() 
 
       if (error) {
         console.error('Failed to create goal in Supabase:', error);
+        console.error('Goal data being inserted:', {
+          title: newGoal.title,
+          description: newGoal.description,
+          category: newGoal.category,
+          user_id: newGoal.user_id,
+          target_value: newGoal.target_value,
+          unit: newGoal.unit
+        });
         // Rollback optimistic update
         setLocalGoals(goals);
         setItem('goals', JSON.stringify(goals)).catch(console.warn);
@@ -284,6 +315,31 @@ export const [GoalsProvider, useGoals] = createContextHook<GoalsContextType>(() 
         const finalGoals = goals.map(g => g.id === optimisticGoal.id ? realGoal : g);
         setLocalGoals(finalGoals);
         setItem('goals', JSON.stringify(finalGoals)).catch(console.warn);
+
+        // Create tasks if provided
+        if (tasks && tasks.length > 0) {
+          try {
+            const tasksWithGoalId = tasks.map(task => ({
+              ...task,
+              goal_id: data.id,
+              user_id: newGoal.user_id || data.user_id
+            }));
+
+            const { error: tasksError } = await supabase
+              .from('momentum_tasks')
+              .insert(tasksWithGoalId);
+
+            if (tasksError) {
+              console.error('Failed to create tasks:', tasksError);
+            } else {
+              console.log(`Created ${tasks.length} tasks for goal ${data.id}`);
+              // Refresh tasks from database
+              fetchTasks();
+            }
+          } catch (error) {
+            console.error('Error creating tasks:', error);
+          }
+        }
       }
     } catch (error) {
       console.error('Error creating goal:', error);
@@ -337,42 +393,37 @@ export const [GoalsProvider, useGoals] = createContextHook<GoalsContextType>(() 
 
   // Enhanced progress tracking for goals
   const getGoalProgress = useCallback((goal: Goal) => {
-    if (goal.target === 0) return 0;
-    return Math.round((goal.current / goal.target) * 100);
-  }, []);
+    // Calculate progress based on completed tasks for this goal
+    const goalTasks = tasks.filter(task => task.goal_id === goal.id);
+    if (goalTasks.length === 0) return 0;
+    
+    const completedTasks = goalTasks.filter(task => task.completed || task.status === 'completed').length;
+    return Math.round((completedTasks / goalTasks.length) * 100);
+  }, [tasks]);
 
   // Get today's progress across all goals
   const getTodaysProgress = useCallback(() => {
     const today = new Date();
-    const dayOfWeek = today.getDay();
-    const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-    const dayName = dayNames[dayOfWeek];
+    const todayStr = today.toISOString().split('T')[0];
     
-    let totalTasks = 0;
-    let completedTasks = 0;
-    
-    goals.forEach(goal => {
-      if (goal.plan?.weeklyPlan) {
-        const weeklyPlan = goal.plan.weeklyPlan.find(plan => 
-          plan.day.toLowerCase() === dayName.toLowerCase()
-        );
-        
-        if (weeklyPlan) {
-          totalTasks += weeklyPlan.activities.length;
-          // For now, we'll use a simple completion rate based on goal progress
-          // In a real implementation, you'd track individual task completion
-          const goalProgress = getGoalProgress(goal);
-          completedTasks += Math.round((weeklyPlan.activities.length * goalProgress) / 100);
-        }
+    // Get all tasks for today
+    const todaysTasks = tasks.filter(task => {
+      if (task.date) {
+        return task.date === todayStr;
       }
+      // Fallback for old task structure
+      return task.time && task.time.includes(todayStr);
     });
+    
+    const totalTasks = todaysTasks.length;
+    const completedTasks = todaysTasks.filter(task => task.completed || task.status === 'completed').length;
     
     return {
       totalTasks,
       completedTasks,
       progressPercentage: totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0
     };
-  }, [goals, getGoalProgress]);
+  }, [tasks]);
 
   return useMemo(() => ({
     tasks,

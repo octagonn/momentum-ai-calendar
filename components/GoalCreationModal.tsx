@@ -14,207 +14,9 @@ import {
 import { X, Send, Bot } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/providers/ThemeProvider';
-// Enhanced AI text generation function with better prompts and validation
-const generateText = async ({ messages }: { messages: Array<{ role: string; content: string }> }) => {
-  // Simulate API delay
-  await new Promise(resolve => setTimeout(resolve, 1000 + Math.random() * 2000));
-  
-  const lastMessage = messages[messages.length - 1];
-  const content = lastMessage.content.toLowerCase();
-  
-  // Enhanced responses with better prompts and validation
-  if (content.includes('goal type') || content.includes('fitness') || content.includes('learning') || content.includes('health') || content.includes('career') || content.includes('personal')) {
-    return "That sounds like an excellent goal! I'm excited to help you create a personalized plan. To make this as effective as possible, I need to understand your starting point.\n\n**What's your current level with this goal?** For example:\n• If it's fitness: What's your current fitness level, any injuries, or previous experience?\n• If it's learning: What do you already know about this topic?\n• If it's health: What's your current health status?\n• If it's career: What's your current skill level in this area?\n\nThis will help me create a plan that's perfectly tailored to where you are right now.";
-  } else if (content.includes('baseline') || content.includes('current') || content.includes('starting') || content.includes('level')) {
-    return "Perfect! That gives me a great foundation to work with. Now let's talk about your schedule and availability.\n\n**How much time can you realistically dedicate to this goal each week?** Please consider:\n• How many days per week can you work on this?\n• How long can each session be? (15 minutes, 30 minutes, 1 hour, etc.)\n• What time of day works best for you?\n• Are there any days that are completely off-limits?\n\nI want to make sure we create a plan that fits your lifestyle, not the other way around!";
-  } else if (content.includes('availability') || content.includes('schedule') || content.includes('time') || content.includes('days')) {
-    return "Excellent! I can see you're being realistic about your time commitments. Now for the final piece of the puzzle - your timeline.\n\n**When would you like to achieve this goal?** Please consider:\n• What's your target date? (be specific if possible)\n• Why is this timeline important to you?\n• Is this deadline flexible or fixed?\n• What would happen if you achieved it a bit earlier or later?\n\nI'll help you determine if this timeline is realistic based on your availability and goal complexity. If needed, I can suggest adjustments to make it more achievable.";
-  } else if (content.includes('timeline') || content.includes('when') || content.includes('deadline') || content.includes('date')) {
-    // Add validation logic here
-    const timelineValidation = validateTimeline(content);
-    if (timelineValidation.isUnrealistic) {
-      return `I appreciate your ambition! However, I want to make sure we set you up for success. ${timelineValidation.message}\n\n**Let me suggest a more realistic timeline:**\n${timelineValidation.suggestion}\n\n**Would you like to adjust your timeline, or would you prefer to break this into smaller, more achievable goals?**\n\nRemember, it's better to achieve a smaller goal consistently than to struggle with an unrealistic one. What do you think?`;
-    }
-    
-    return "That's a great timeline! I can see you've thought this through carefully. Let me create a personalized plan that will help you achieve this goal within your timeframe.\n\n**I'm now generating your custom plan based on:**\n• Your goal type and current level\n• Your available time and schedule\n• Your target timeline\n• Best practices for this type of goal\n\nThis will include weekly milestones, specific activities, and personalized tips to keep you motivated. Give me just a moment...";
-  } else if (content.includes('plan') || content.includes('generate') || content.includes('create')) {
-    return generatePersonalizedPlan(content);
-  } else {
-    return "I understand! That's helpful information. Let me ask you a few more questions to create the best plan for you.\n\n**To recap where we are:**\n• We've discussed your goal type\n• We've covered your starting point\n• We've talked about your schedule\n• We've set your timeline\n\n**Is there anything else I should know about your situation, preferences, or any challenges you anticipate?** The more I understand, the better I can tailor your plan.";
-  }
-};
-
-// Validation logic for unrealistic timelines
-const validateTimeline = (content: string) => {
-  const timeKeywords = {
-    '1 week': 7,
-    '2 weeks': 14,
-    '1 month': 30,
-    '2 months': 60,
-    '3 months': 90,
-    '6 months': 180,
-    '1 year': 365
-  };
-  
-  const goalKeywords = {
-    'lose 50 pounds': 180,
-    'lose 30 pounds': 120,
-    'lose 20 pounds': 90,
-    'lose 10 pounds': 60,
-    'learn spanish': 365,
-    'learn french': 365,
-    'learn coding': 180,
-    'run marathon': 120,
-    'build muscle': 180,
-    'get fit': 90
-  };
-  
-  // Check for unrealistic combinations
-  for (const [goal, minDays] of Object.entries(goalKeywords)) {
-    if (content.includes(goal)) {
-      for (const [timeframe, days] of Object.entries(timeKeywords)) {
-        if (content.includes(timeframe) && days < minDays) {
-          return {
-            isUnrealistic: true,
-            message: `I notice you want to ${goal} in ${timeframe}. While I admire your determination, this timeline might be too aggressive and could lead to burnout or disappointment.`,
-            suggestion: `For ${goal}, I'd recommend a timeline of at least ${Math.ceil(minDays / 30)} months to ensure sustainable progress and long-term success.`
-          };
-        }
-      }
-    }
-  }
-  
-  return { isUnrealistic: false, message: '', suggestion: '' };
-};
-
-// Generate personalized plan based on user input
-const generatePersonalizedPlan = (content: string) => {
-  // Extract goal type from content
-  let goalType = 'general';
-  let targetValue = 100;
-  let unit = 'points';
-  
-  if (content.includes('fitness') || content.includes('workout') || content.includes('gym')) {
-    goalType = 'fitness';
-    targetValue = 30; // days
-    unit = 'days';
-  } else if (content.includes('learning') || content.includes('study') || content.includes('course')) {
-    goalType = 'learning';
-    targetValue = 100;
-    unit = 'hours';
-  } else if (content.includes('weight') || content.includes('lose') || content.includes('pounds')) {
-    goalType = 'weight loss';
-    targetValue = 20;
-    unit = 'pounds';
-  } else if (content.includes('language') || content.includes('spanish') || content.includes('french')) {
-    goalType = 'language';
-    targetValue = 100;
-    unit = 'lessons';
-  }
-  
-  const plans = {
-    fitness: {
-      title: "30-Day Fitness Transformation",
-      description: "A structured fitness program designed to build strength, endurance, and healthy habits",
-      milestones: [
-        { week: 1, target: 5, description: "Establish workout routine and build consistency" },
-        { week: 2, target: 10, description: "Increase intensity and add variety" },
-        { week: 3, target: 20, description: "Push your limits and see real progress" },
-        { week: 4, target: 30, description: "Complete your transformation!" }
-      ],
-      weeklyPlan: [
-        { day: "Monday", activities: ["Upper body strength training", "Cardio warm-up"], duration: "45 minutes" },
-        { day: "Wednesday", activities: ["Lower body workout", "Core exercises"], duration: "45 minutes" },
-        { day: "Friday", activities: ["Full body HIIT", "Stretching"], duration: "40 minutes" },
-        { day: "Sunday", activities: ["Active recovery", "Yoga or walking"], duration: "30 minutes" }
-      ],
-      tips: [
-        "Start each workout with a 5-minute warm-up",
-        "Track your workouts to see progress",
-        "Stay hydrated and get enough sleep",
-        "Listen to your body and rest when needed"
-      ]
-    },
-    learning: {
-      title: "100-Hour Learning Journey",
-      description: "A comprehensive learning plan to master your chosen subject",
-      milestones: [
-        { week: 1, target: 10, description: "Build foundation and establish study habits" },
-        { week: 2, target: 25, description: "Dive deeper into core concepts" },
-        { week: 3, target: 50, description: "Apply knowledge through practice" },
-        { week: 4, target: 75, description: "Master advanced topics" },
-        { week: 5, target: 100, description: "Complete your learning journey!" }
-      ],
-      weeklyPlan: [
-        { day: "Monday", activities: ["Theory study", "Note-taking"], duration: "2 hours" },
-        { day: "Wednesday", activities: ["Practical exercises", "Problem solving"], duration: "2 hours" },
-        { day: "Friday", activities: ["Review and practice", "Project work"], duration: "2 hours" },
-        { day: "Sunday", activities: ["Reflection and planning", "Additional reading"], duration: "1 hour" }
-      ],
-      tips: [
-        "Use the Pomodoro technique for focused study sessions",
-        "Take breaks every 25-30 minutes",
-        "Practice active recall and spaced repetition",
-        "Join study groups or find a learning partner"
-      ]
-    },
-    'weight loss': {
-      title: "20-Pound Weight Loss Journey",
-      description: "A sustainable approach to healthy weight loss through nutrition and exercise",
-      milestones: [
-        { week: 1, target: 2, description: "Establish healthy eating habits" },
-        { week: 2, target: 4, description: "Add regular exercise routine" },
-        { week: 3, target: 8, description: "Increase workout intensity" },
-        { week: 4, target: 12, description: "Maintain momentum and consistency" },
-        { week: 5, target: 16, description: "Push through plateaus" },
-        { week: 6, target: 20, description: "Achieve your goal weight!" }
-      ],
-      weeklyPlan: [
-        { day: "Monday", activities: ["Meal prep", "Cardio workout"], duration: "1 hour" },
-        { day: "Wednesday", activities: ["Strength training", "Nutrition tracking"], duration: "1 hour" },
-        { day: "Friday", activities: ["HIIT workout", "Weekly weigh-in"], duration: "45 minutes" },
-        { day: "Sunday", activities: ["Meal planning", "Active recovery"], duration: "30 minutes" }
-      ],
-      tips: [
-        "Track your calories and macros daily",
-        "Drink at least 8 glasses of water",
-        "Get 7-8 hours of sleep each night",
-        "Focus on whole, unprocessed foods"
-      ]
-    },
-    language: {
-      title: "100-Lesson Language Mastery",
-      description: "A structured approach to learning a new language from beginner to conversational",
-      milestones: [
-        { week: 1, target: 10, description: "Learn basic vocabulary and pronunciation" },
-        { week: 2, target: 25, description: "Master essential phrases and grammar" },
-        { week: 3, target: 50, description: "Build conversational skills" },
-        { week: 4, target: 75, description: "Practice with native speakers" },
-        { week: 5, target: 100, description: "Achieve conversational fluency!" }
-      ],
-      weeklyPlan: [
-        { day: "Monday", activities: ["Vocabulary building", "Pronunciation practice"], duration: "30 minutes" },
-        { day: "Wednesday", activities: ["Grammar lessons", "Writing exercises"], duration: "30 minutes" },
-        { day: "Friday", activities: ["Speaking practice", "Listening comprehension"], duration: "30 minutes" },
-        { day: "Sunday", activities: ["Review and practice", "Cultural immersion"], duration: "30 minutes" }
-      ],
-      tips: [
-        "Practice speaking out loud daily",
-        "Use language learning apps consistently",
-        "Watch movies or shows in your target language",
-        "Find a language exchange partner"
-      ]
-    }
-  };
-  
-  const plan = plans[goalType as keyof typeof plans] || plans.fitness;
-  
-  return JSON.stringify({
-    ...plan,
-    target: targetValue,
-    unit: unit
-  });
-};
+import { useAuth } from '@/providers/AuthProvider';
+import { useGoals } from '@/providers/GoalsProvider';
+import { aiService } from '@/lib/ai-service';
 
 interface Message {
   id: string;
@@ -265,6 +67,8 @@ type ConversationStage = typeof CONVERSATION_STAGES[keyof typeof CONVERSATION_ST
 
 export default function GoalCreationModal({ visible, onClose, onGoalCreated, editingGoal }: GoalCreationModalProps) {
   const { colors, isDark } = useTheme();
+  const { user } = useAuth();
+  const { addGoal } = useGoals();
   const insets = useSafeAreaInsets();
   const scrollViewRef = useRef<ScrollView>(null);
   
@@ -274,6 +78,8 @@ export default function GoalCreationModal({ visible, onClose, onGoalCreated, edi
   const [currentStage, setCurrentStage] = useState<ConversationStage>(CONVERSATION_STAGES.INITIAL);
   const [goalData, setGoalData] = useState<GoalData>({});
   const [generatedPlan, setGeneratedPlan] = useState<any>(null);
+
+  // AI service will be used directly
 
   useEffect(() => {
     if (visible) {
@@ -315,20 +121,20 @@ export default function GoalCreationModal({ visible, onClose, onGoalCreated, edi
       });
     } else {
       // Initialize for creation mode
-    const welcomeMessage: Message = {
-      id: Date.now().toString(),
-      role: 'assistant',
-      content: "Hi! I'm here to help you create a personalized goal and training plan. Let's start by understanding what you want to achieve.\n\nWhat type of goal are you looking to work on? For example:\n• Fitness (strength, endurance, weight loss)\n• Learning (new skill, language, hobby)\n• Health (nutrition, sleep, wellness)\n• Career (skill development, certification)\n• Personal (habits, productivity)",
-      timestamp: new Date(),
-    };
-    setMessages([welcomeMessage]);
-    setCurrentStage(CONVERSATION_STAGES.GOAL_TYPE);
+      const welcomeMessage: Message = {
+        id: Date.now().toString(),
+        role: 'assistant',
+        content: "Hi! I'm here to help you create a personalized goal and training plan. Let's start by understanding what you want to achieve.\n\nWhat type of goal are you looking to work on? For example:\n• Fitness (strength, endurance, weight loss)\n• Learning (new skill, language, hobby)\n• Health (nutrition, sleep, wellness)\n• Career (skill development, certification)\n• Personal (habits, productivity)",
+        timestamp: new Date(),
+      };
+      setMessages([welcomeMessage]);
+      setCurrentStage(CONVERSATION_STAGES.GOAL_TYPE);
     }
   };
 
   const addMessage = (role: 'user' | 'assistant', content: string) => {
     const newMessage: Message = {
-      id: Date.now().toString(),
+      id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       role,
       content,
       timestamp: new Date(),
@@ -379,16 +185,15 @@ export default function GoalCreationModal({ visible, onClose, onGoalCreated, edi
           systemPrompt = `You are a helpful goal-setting assistant. Respond naturally to the user's input and guide them through the goal creation process.`;
       }
 
-      const response = await generateText({
-        messages: [
-          { role: 'user', content: `${systemPrompt}\n\nUser input: ${userPrompt}\n\nCurrent goal data: ${JSON.stringify(goalData)}` }
-        ]
-      });
+      const response = await aiService.generateResponse([
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: `${userPrompt}\n\nCurrent goal data: ${JSON.stringify(goalData)}` }
+      ]);
 
-      addMessage('assistant', response);
+      addMessage('assistant', response.content);
       
-      // Progress to next stage based on current stage
-      progressConversation(userInput, stage);
+      // Don't progress conversation here - let the user respond first
+      // The conversation will progress when the user sends their next message
       
     } catch (error) {
       console.error('Error generating AI response:', error);
@@ -404,35 +209,56 @@ export default function GoalCreationModal({ visible, onClose, onGoalCreated, edi
       return;
     }
     
+    console.log('Progressing conversation:', { currentStage, userInput: userInput.substring(0, 50) });
+    
     // Update goal data based on user input and current stage
     const updatedGoalData = { ...goalData };
     
     switch (currentStage) {
       case CONVERSATION_STAGES.GOAL_TYPE:
         updatedGoalData.goalType = userInput;
+        updatedGoalData.specificGoal = userInput;
         setCurrentStage(CONVERSATION_STAGES.BASELINE);
+        console.log('Moved to BASELINE stage');
         break;
         
       case CONVERSATION_STAGES.BASELINE:
         // Parse baseline information from user input
-        updatedGoalData.baseline = { ...updatedGoalData.baseline };
+        updatedGoalData.baseline = { 
+          ...updatedGoalData.baseline,
+          currentFitness: userInput,
+          experience: userInput
+        };
         setCurrentStage(CONVERSATION_STAGES.AVAILABILITY);
+        console.log('Moved to AVAILABILITY stage');
         break;
         
       case CONVERSATION_STAGES.AVAILABILITY:
         // Parse availability information
-        updatedGoalData.availability = { ...updatedGoalData.availability };
+        updatedGoalData.availability = { 
+          ...updatedGoalData.availability,
+          daysPerWeek: userInput.includes('2-3') ? 3 : 2,
+          duration: 60,
+          timeSlots: ['morning', 'afternoon']
+        };
         setCurrentStage(CONVERSATION_STAGES.TIMELINE);
+        console.log('Moved to TIMELINE stage');
         break;
         
       case CONVERSATION_STAGES.TIMELINE:
         // Parse timeline information
-        updatedGoalData.timeline = { ...updatedGoalData.timeline };
+        updatedGoalData.timeline = { 
+          ...updatedGoalData.timeline,
+          targetDate: userInput.includes('week') ? '1 week' : userInput,
+          urgency: 'high'
+        };
         setCurrentStage(CONVERSATION_STAGES.VALIDATION);
+        console.log('Moved to VALIDATION stage');
         break;
         
       case CONVERSATION_STAGES.VALIDATION:
         setCurrentStage(CONVERSATION_STAGES.PLAN_GENERATION);
+        console.log('Moved to PLAN_GENERATION stage');
         generatePlan(updatedGoalData);
         break;
     }
@@ -444,93 +270,20 @@ export default function GoalCreationModal({ visible, onClose, onGoalCreated, edi
     setIsLoading(true);
     
     try {
-      const planPrompt = `Create a detailed, structured goal plan based on this information:
-      
-Goal Type: ${data.goalType}
-Baseline: ${JSON.stringify(data.baseline)}
-Availability: ${JSON.stringify(data.availability)}
-Timeline: ${JSON.stringify(data.timeline)}
-
-Generate a JSON response with this structure:
-{
-  "title": "Specific, actionable goal title",
-  "description": "Clear, motivating description of what they'll achieve",
-  "target": 100,
-  "unit": "points or percentage",
-  "milestones": [
-    {
-      "week": 1,
-      "target": 20,
-      "description": "Specific milestone description"
-    },
-    {
-      "week": 2,
-      "target": 40,
-      "description": "Specific milestone description"
-    },
-    {
-      "week": 3,
-      "target": 60,
-      "description": "Specific milestone description"
-    },
-    {
-      "week": 4,
-      "target": 80,
-      "description": "Specific milestone description"
-    },
-    {
-      "week": 5,
-      "target": 100,
-      "description": "Goal completion!"
-    }
-  ],
-  "weeklyPlan": [
-    {
-      "day": "Monday",
-      "activities": ["Specific activity 1", "Specific activity 2"],
-      "duration": "30-45 minutes"
-    },
-    {
-      "day": "Wednesday", 
-      "activities": ["Specific activity 1", "Specific activity 2"],
-      "duration": "30-45 minutes"
-    },
-    {
-      "day": "Friday",
-      "activities": ["Assessment", "Plan next week"],
-      "duration": "20-30 minutes"
-    }
-  ],
-  "tips": [
-    "Stay consistent with your schedule",
-    "Track your progress daily",
-    "Celebrate small wins along the way",
-    "Adjust the plan if needed"
-  ],
-  "recommendations": [
-    "Specific recommendation based on their goal type",
-    "Another helpful tip",
-    "Motivational advice"
-  ]
-}
-
-Make it realistic, achievable, and personalized to their situation. Consider their availability and timeline.`;
-
-      const planResponse = await generateText({
-        messages: [{ role: 'user', content: planPrompt }]
+      const plan = await aiService.generateGoalPlan({
+        title: data.goalType || 'My Goal',
+        description: data.specificGoal || 'A personal goal I want to achieve',
+        baseline: JSON.stringify(data.baseline || {}),
+        target: '100',
+        timeline: JSON.stringify(data.timeline || {}),
+        availability: JSON.stringify(data.availability || {}),
       });
 
-      try {
-        const plan = JSON.parse(planResponse);
-        setGeneratedPlan(plan);
-        
-        addMessage('assistant', `🎯 **Perfect! I've created your personalized plan:**\n\n**${plan.title}**\n\n${plan.description}\n\n**What's included:**\n• ${plan.milestones?.length || 0} milestone checkpoints\n• Weekly structured activities\n• Personalized tips and recommendations\n• Realistic timeline based on your availability\n\n**Ready to start your journey?** Would you like me to add this goal to your goals list?`);
-        
-        setCurrentStage(CONVERSATION_STAGES.CONFIRMATION);
-      } catch (parseError) {
-        console.error('Error parsing plan:', parseError);
-        addMessage('assistant', "I've created a plan for you, but there was an issue formatting it. Let me try again with a simpler approach.");
-      }
+      setGeneratedPlan(plan);
+      
+      addMessage('assistant', `🎯 **Perfect! I've created your personalized plan:**\n\n**${plan.title}**\n\n${plan.description}\n\n**What's included:**\n• ${plan.milestones?.length || 0} milestone checkpoints\n• Weekly structured activities\n• Personalized tips and recommendations\n• Realistic timeline based on your availability\n\n**Ready to start your journey?** Would you like me to add this goal to your goals list?`);
+      
+      setCurrentStage(CONVERSATION_STAGES.CONFIRMATION);
       
     } catch (error) {
       console.error('Error generating plan:', error);
@@ -555,29 +308,63 @@ Make it realistic, achievable, and personalized to their situation. Consider the
       }
     } else {
       await generateAIResponse(userMessage, currentStage);
+      // Progress conversation after AI responds
+      progressConversation(userMessage, currentStage);
     }
   };
 
-  const handleConfirmGoal = () => {
-    if (generatedPlan) {
-      const newGoal = {
-        id: Date.now().toString(),
-        title: generatedPlan.title,
-        description: generatedPlan.description,
-        current: 0,
-        target: generatedPlan.target || 100,
-        unit: generatedPlan.unit || 'points',
-        status: 'active' as const,
-        progress: 0,
-        plan: generatedPlan,
-      };
+  const handleConfirmGoal = async () => {
+    console.log('handleConfirmGoal called:', { generatedPlan: !!generatedPlan, user: !!user, userId: user?.id });
+    
+    if (generatedPlan && user) {
+      try {
+        // Generate goal plan with tasks
+        const { goal, tasks } = await aiService.generateGoalPlanWithTasks({
+          ...goalData,
+          title: generatedPlan.title,
+          description: generatedPlan.description,
+          category: generatedPlan.category || 'personal',
+          target: generatedPlan.target || 100,
+          unit: generatedPlan.unit || 'points'
+        });
 
-      onGoalCreated(newGoal);
-      addMessage('assistant', "Perfect! Your goal has been added to your goals list. You can track your progress and follow your personalized plan. Good luck! 🎯");
-      
-      setTimeout(() => {
-        onClose();
-      }, 2000);
+        const newGoal = {
+          title: goal.title,
+          description: goal.description,
+          category: goal.category || 'personal',
+          target_value: goal.target || 100,
+          unit: goal.unit || 'points',
+          status: 'active' as const,
+          current_value: 0,
+          progress_percentage: 0,
+          plan: goal,
+          user_id: user.id,
+        };
+
+        // Add goal to database through GoalsProvider with tasks
+        await addGoal(newGoal, tasks);
+        
+        addMessage('assistant', `Perfect! Your goal has been added with ${tasks?.length || 0} scheduled tasks. You can track your progress and follow your personalized plan. Good luck! 🎯`);
+        
+        // Call the onGoalCreated callback for any additional UI updates
+        onGoalCreated(newGoal);
+        
+        setTimeout(() => {
+          onClose();
+        }, 2000);
+      } catch (error) {
+        console.error('Error creating goal:', error);
+        console.error('Error details:', {
+          message: error.message,
+          stack: error.stack,
+          user: user?.id,
+          goalData: newGoal
+        });
+        addMessage('assistant', `Sorry, there was an error creating your goal: ${error.message}. Please try again.`);
+      }
+    } else {
+      console.log('Cannot create goal:', { generatedPlan: !!generatedPlan, user: !!user });
+      addMessage('assistant', "Please make sure you're logged in to create a goal.");
     }
   };
 

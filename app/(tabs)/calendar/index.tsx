@@ -17,7 +17,6 @@ import { useTheme } from "@/providers/ThemeProvider";
 import { useGoals } from "@/providers/GoalsProvider";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-type ViewType = "month" | "week" | "day" | "year";
 
 export default function CalendarScreen() {
   const { colors, isDark } = useTheme();
@@ -26,7 +25,6 @@ export default function CalendarScreen() {
   const { width } = Dimensions.get('window');
   const scrollY = useRef(new Animated.Value(0)).current;
   const [currentDate, setCurrentDate] = useState(new Date());
-  const [selectedView, setSelectedView] = useState<ViewType>("month");
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
 
   const monthNames = [
@@ -40,8 +38,11 @@ export default function CalendarScreen() {
   const getTasksForDate = (date: Date) => {
     const dateStr = date.toISOString().split('T')[0];
     return tasks.filter(task => {
-      // For now, we'll use the existing task structure
-      // Later we'll integrate with goal-generated tasks
+      // Check if task has the new date field or falls back to time field
+      if (task.date) {
+        return task.date === dateStr;
+      }
+      // Fallback for old task structure
       return task.time && task.time.includes(dateStr);
     });
   };
@@ -110,16 +111,6 @@ export default function CalendarScreen() {
     setSelectedDate(selected);
   };
 
-  const switchCalendarView = async (view: ViewType) => {
-    if (!view.trim() || view.length > 10) return;
-    
-    if (Platform.OS !== "web") {
-      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    }
-    
-    setSelectedView(view);
-    console.log(`Calendar view switched to: ${view}`);
-  };
 
   const handleAddEvent = async () => {
     if (Platform.OS !== "web") {
@@ -408,28 +399,6 @@ export default function CalendarScreen() {
       minWidth: 160,
       textAlign: "center",
     },
-    viewSelector: {
-      flexDirection: "row",
-      backgroundColor: colors.background,
-      borderRadius: 10,
-      padding: 4,
-    },
-    viewButton: {
-      paddingHorizontal: 12,
-      paddingVertical: 8,
-      borderRadius: 8,
-    },
-    viewButtonActive: {
-      backgroundColor: colors.primary,
-    },
-    viewButtonText: {
-      fontSize: 14,
-      fontWeight: "500" as const,
-      color: colors.textSecondary,
-    },
-    viewButtonTextActive: {
-      color: "white",
-    },
     calendarContainer: {
       flex: 1,
       padding: 20,
@@ -575,6 +544,26 @@ export default function CalendarScreen() {
       fontSize: 12,
       color: colors.textSecondary,
     },
+    taskDescription: {
+      fontSize: 11,
+      color: colors.textSecondary,
+      marginTop: 2,
+      fontStyle: 'italic',
+    },
+    taskMeta: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginTop: 4,
+    },
+    taskDuration: {
+      fontSize: 11,
+      color: colors.textSecondary,
+      backgroundColor: colors.backgroundSecondary,
+      paddingHorizontal: 6,
+      paddingVertical: 2,
+      borderRadius: 8,
+    },
     taskCheckbox: {
       width: 24,
       height: 24,
@@ -719,29 +708,6 @@ export default function CalendarScreen() {
             </View>
           </View>
 
-          <View style={styles.viewSelector}>
-            {(["month", "week", "day", "year"] as ViewType[]).map((view) => (
-              <TouchableOpacity
-                key={view}
-                style={[
-                  styles.viewButton,
-                  selectedView === view && styles.viewButtonActive,
-                ]}
-                onPress={() => switchCalendarView(view)}
-                activeOpacity={0.7}
-                testID={`view-${view}`}
-              >
-                <Text
-                  style={[
-                    styles.viewButtonText,
-                    selectedView === view && styles.viewButtonTextActive,
-                  ]}
-                >
-                  {view.charAt(0).toUpperCase() + view.slice(1)}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
         </View>
 
         <View style={styles.calendarGrid}>
@@ -783,14 +749,26 @@ export default function CalendarScreen() {
                         ]}>
                           {task.title}
                         </Text>
+                        {task.description && (
+                          <Text style={styles.taskDescription}>
+                            {task.description}
+                          </Text>
+                        )}
                         {task.goalTitle && (
                           <Text style={styles.taskGoal}>
                             {task.goalTitle}
                           </Text>
                         )}
-                        <Text style={styles.taskTime}>
-                          {task.time}
-                        </Text>
+                        <View style={styles.taskMeta}>
+                          <Text style={styles.taskTime}>
+                            {task.time}
+                          </Text>
+                          {task.estimated_duration && (
+                            <Text style={styles.taskDuration}>
+                              {task.estimated_duration}min
+                            </Text>
+                          )}
+                        </View>
                       </View>
                       <View style={[
                         styles.taskCheckbox,

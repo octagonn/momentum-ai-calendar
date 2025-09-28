@@ -35,3 +35,4 @@ console.log('  Backend: npm run server');
 console.log('  Frontend: npm start');
 console.log('\n✨ Setup complete!');
 
+

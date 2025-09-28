@@ -8,7 +8,7 @@ import {
   ScrollView,
   Platform,
 } from 'react-native';
-import { X, Calendar, Clock, Target, TrendingUp, Edit, Pause, Trash2 } from 'lucide-react-native';
+import { X, Calendar, Clock, Target, TrendingUp, Edit, Trash2 } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/providers/ThemeProvider';
 
@@ -17,7 +17,6 @@ interface GoalDetailModalProps {
   goal: any;
   onClose: () => void;
   onEdit?: () => void;
-  onPause?: () => void;
   onDelete?: () => void;
 }
 
@@ -26,7 +25,6 @@ export default function GoalDetailModal({
   goal, 
   onClose, 
   onEdit, 
-  onPause, 
   onDelete 
 }: GoalDetailModalProps) {
   const { colors, isDark } = useTheme();
@@ -260,13 +258,10 @@ export default function GoalDetailModal({
       paddingVertical: 12,
       paddingHorizontal: 16,
       borderRadius: 12,
-      marginHorizontal: 4,
+      marginHorizontal: 8,
     },
     editButton: {
       backgroundColor: colors.primary,
-    },
-    pauseButton: {
-      backgroundColor: colors.warning,
     },
     deleteButton: {
       backgroundColor: colors.danger,
@@ -380,16 +375,6 @@ export default function GoalDetailModal({
             >
               <Edit size={16} color="white" />
               <Text style={styles.actionText}>Edit</Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={[styles.actionButton, styles.pauseButton]}
-              onPress={onPause}
-            >
-              <Pause size={16} color="white" />
-              <Text style={styles.actionText}>
-                {goal.status === 'paused' ? 'Resume' : 'Pause'}
-              </Text>
             </TouchableOpacity>
             
             <TouchableOpacity 

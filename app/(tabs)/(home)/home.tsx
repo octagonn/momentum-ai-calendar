@@ -66,7 +66,8 @@ export default function HomeScreen() {
   };
 
   const todaysTasksFromGoals = getTodaysTasksFromGoals();
-  const allTodaysTasks = [...tasks, ...todaysTasksFromGoals];
+  // Only show tasks that are linked to actual goals in the database
+  const allTodaysTasks = todaysTasksFromGoals;
   
   const [animatedValues, setAnimatedValues] = useState<Animated.Value[]>([]);
 
@@ -96,7 +97,17 @@ export default function HomeScreen() {
       ]).start();
     }
     
-    toggleTask(taskId);
+    // Only toggle tasks that exist in the database
+    // Tasks from goal plans are generated dynamically and don't need to be toggled
+    const task = allTodaysTasks[index];
+    if (task && !task.goalId) {
+      // This is a database task, toggle it
+      toggleTask(taskId);
+    } else {
+      // This is a goal plan task, we could implement local state tracking here
+      // For now, we'll just show a message that this is a goal-based task
+      console.log('Goal-based task toggled:', task.title);
+    }
   };
 
   const handleProgressCardPress = async (index: number) => {
@@ -152,10 +163,15 @@ export default function HomeScreen() {
     return "Good Evening";
   };
 
+  // Calculate progress based only on goal-generated tasks
+  const completedGoalTasks = allTodaysTasks.filter(t => t.completed).length;
+  const totalGoalTasks = allTodaysTasks.length;
+  const goalProgressPercentage = totalGoalTasks > 0 ? Math.round((completedGoalTasks / totalGoalTasks) * 100) : 0;
+
   const progressCards = [
-    { label: "Tasks Complete", value: `${todaysProgress.completedTasks}/${todaysProgress.totalTasks}`, color: colors.primary },
+    { label: "Tasks Complete", value: `${completedGoalTasks}/${totalGoalTasks}`, color: colors.primary },
     { label: "Day Streak", value: user.dayStreak.toString(), color: colors.success },
-    { label: "Today's Progress", value: `${todaysProgress.progressPercentage}%`, color: colors.warning },
+    { label: "Today's Progress", value: `${goalProgressPercentage}%`, color: colors.warning },
     { label: "Goals Active", value: goals.filter(g => g.status === 'active').length.toString(), color: colors.info },
   ];
 
@@ -523,6 +539,21 @@ export default function HomeScreen() {
       fontSize: 13,
       color: colors.textSecondary,
     },
+    taskDescription: {
+      fontSize: 12,
+      color: colors.textSecondary,
+      marginTop: 2,
+      fontStyle: 'italic',
+    },
+    taskDuration: {
+      fontSize: 11,
+      color: colors.textSecondary,
+      backgroundColor: colors.backgroundSecondary,
+      paddingHorizontal: 6,
+      paddingVertical: 2,
+      borderRadius: 8,
+      marginLeft: 8,
+    },
     timeContainer: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -771,8 +802,8 @@ export default function HomeScreen() {
 
         {/* Motivational Message */}
         {(() => {
-          const completedTasks = allTodaysTasks.filter(t => t.completed).length;
-          const totalTasks = allTodaysTasks.length;
+          const completedTasks = completedGoalTasks;
+          const totalTasks = totalGoalTasks;
           const completionRate = totalTasks > 0 ? (completedTasks / totalTasks) * 100 : 0;
           
           let message = "";
@@ -822,7 +853,7 @@ export default function HomeScreen() {
             <View style={styles.taskHeader}>
               <Text style={styles.taskTitle}>Today&apos;s Tasks</Text>
               <Text style={styles.taskSubtitle}>
-                {allTodaysTasks.filter(t => !t.completed).length} remaining
+                {totalGoalTasks - completedGoalTasks} remaining
               </Text>
             </View>
 
@@ -856,6 +887,11 @@ export default function HomeScreen() {
                   >
                     {task.title}
                   </Text>
+                  {task.description && (
+                    <Text style={styles.taskDescription}>
+                      {task.description}
+                    </Text>
+                  )}
                   {task.goalTitle && (
                     <Text style={styles.taskGoal}>
                       {task.goalTitle}
@@ -864,6 +900,11 @@ export default function HomeScreen() {
                   <View style={styles.timeContainer}>
                     <Clock size={12} color={colors.textSecondary} style={timeIconStyle} />
                     <Text style={styles.taskTime}>{task.time}</Text>
+                    {task.estimated_duration && (
+                      <Text style={styles.taskDuration}>
+                        {task.estimated_duration}min
+                      </Text>
+                    )}
                   </View>
                 </View>
 

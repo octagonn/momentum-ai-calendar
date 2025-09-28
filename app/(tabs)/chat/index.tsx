@@ -19,6 +19,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useTheme } from "@/providers/ThemeProvider";
 import { Message } from "@/types/chat";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { aiService } from "@/lib/ai-service";
 
 export default function ChatScreen() {
   const { colors, isDark } = useTheme();
@@ -68,29 +69,54 @@ export default function ChatScreen() {
     };
 
     setMessages((prev) => [...prev, userMessage]);
+    const currentInput = input;
     setInput("");
 
-    // Simulate AI response
-    setTimeout(() => {
-      const aiResponses = [
-        "That's a great goal! Let me help you break it down into actionable steps.",
-        "I've analyzed your schedule and found the perfect time slots for this activity.",
-        "Based on your past performance, I recommend starting with smaller milestones.",
-        "Excellent choice! Let's create a sustainable plan that fits your lifestyle.",
+    scrollViewRef.current?.scrollToEnd({ animated: true });
+
+    try {
+      // Prepare messages for AI service
+      const messagesForAI = [
+        ...messages.map(msg => ({ role: msg.role, content: msg.text })),
+        { role: "user" as const, content: currentInput }
       ];
+
+      console.log('💬 Chat Debug Info:');
+      console.log('- Total messages:', messagesForAI.length);
+      console.log('- User input:', currentInput);
+      console.log('- All messages:', messagesForAI);
+      console.log('- AI Service available:', !!aiService);
+
+      // Call AI service directly
+      console.log('🔄 Calling AI service...');
+      const response = await aiService.generateResponse(messagesForAI);
+      
+      console.log('🤖 AI Response received:', response);
+      console.log('📝 Response content:', response.content);
 
       const aiMessage: Message = {
         id: (Date.now() + 1).toString(),
-        text: aiResponses[Math.floor(Math.random() * aiResponses.length)],
+        text: response.content,
         role: "ai",
         timestamp: new Date(),
       };
 
       setMessages((prev) => [...prev, aiMessage]);
       scrollViewRef.current?.scrollToEnd({ animated: true });
-    }, 1000);
+    } catch (error) {
+      console.error('Error sending message:', error);
+      
+      // Fallback response
+      const errorMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        text: "I'm sorry, I encountered an error. Please try again.",
+        role: "ai",
+        timestamp: new Date(),
+      };
 
-    scrollViewRef.current?.scrollToEnd({ animated: true });
+      setMessages((prev) => [...prev, errorMessage]);
+      scrollViewRef.current?.scrollToEnd({ animated: true });
+    }
   };
 
   const handleQuickAction = useCallback(async (prompt: string) => {
