@@ -31,6 +31,10 @@ export default function HomeScreen() {
   const stats = getTasksStats();
   const todaysProgress = getTodaysProgress();
 
+  // Debug logging
+  console.log('HomeScreen - Goals loaded:', goals.length);
+  console.log('HomeScreen - Sample goal:', goals[0]);
+
   // Get today's tasks from goals
   const getTodaysTasksFromGoals = () => {
     const today = new Date();
@@ -956,7 +960,42 @@ export default function HomeScreen() {
         </View>
 
         <View style={styles.upcomingSection}>
-          {goals.length > 0 ? goals.slice(0, 2).map((goal, index) => (
+          {(() => {
+            // Filter and sort goals for upcoming section
+            const now = new Date();
+            console.log('Filtering goals - Total goals:', goals.length);
+            console.log('Current time:', now.toISOString());
+            
+            const upcomingGoals = goals
+              .filter(goal => {
+                console.log('Checking goal:', goal.title, 'Status:', goal.status, 'Target date:', goal.target_date);
+                // Only show active goals
+                if (goal.status !== 'active') {
+                  console.log('Filtered out - not active:', goal.title);
+                  return false;
+                }
+                // If no target_date, include it (ongoing goals)
+                if (!goal.target_date) {
+                  console.log('Including - no target date:', goal.title);
+                  return true;
+                }
+                // Only show future goals
+                const targetDate = new Date(goal.target_date);
+                const isFuture = targetDate > now;
+                console.log('Target date:', targetDate.toISOString(), 'Is future:', isFuture);
+                return isFuture;
+              })
+              .sort((a, b) => {
+                // Sort by target_date (closest first)
+                if (!a.target_date && !b.target_date) return 0;
+                if (!a.target_date) return 1; // Goals without dates go to end
+                if (!b.target_date) return -1;
+                return new Date(a.target_date).getTime() - new Date(b.target_date).getTime();
+              })
+              .slice(0, 5); // Show next 5 goals
+
+            console.log('Upcoming goals after filtering:', upcomingGoals.length);
+            return upcomingGoals.length > 0 ? upcomingGoals.map((goal, index) => (
             <TouchableOpacity 
               key={`goal-${index}`} 
               style={styles.upcomingCard}
@@ -983,6 +1022,15 @@ export default function HomeScreen() {
                 <View>
                   <Text style={styles.upcomingTitle}>{goal.title}</Text>
                   <Text style={styles.upcomingSubtitle}>{goal.description}</Text>
+                  {goal.target_date && (
+                    <Text style={[styles.upcomingSubtitle, { color: colors.primary, marginTop: 4 }]}>
+                      Due: {new Date(goal.target_date).toLocaleDateString('en-US', {
+                        month: 'short',
+                        day: 'numeric',
+                        year: 'numeric'
+                      })}
+                    </Text>
+                  )}
                 </View>
               </View>
               <View style={goalProgressContainerStyle}>
@@ -991,12 +1039,13 @@ export default function HomeScreen() {
                 />
               </View>
             </TouchableOpacity>
-          )) : (
-            <View style={styles.emptyStateContainer}>
-              <Text style={styles.emptyStateText}>No goals yet</Text>
-              <Text style={styles.emptyStateSubtext}>Create your first goal to get started!</Text>
-            </View>
-          )}
+            )) : (
+              <View style={styles.emptyStateContainer}>
+                <Text style={styles.emptyStateText}>No upcoming goals</Text>
+                <Text style={styles.emptyStateSubtext}>Create your first goal to get started!</Text>
+              </View>
+            );
+          })()}
         </View>
       </Animated.ScrollView>
     </View>
