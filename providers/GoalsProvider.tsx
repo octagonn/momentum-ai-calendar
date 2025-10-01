@@ -40,26 +40,91 @@ export const [GoalsProvider, useGoals] = createContextHook<GoalsContextType>(() 
     loadLocalData();
   }, []);
 
+  // Set up real-time listener for goals
+  useEffect(() => {
+    const setupRealtimeListener = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const goalsSubscription = supabase
+        .channel('goals_changes')
+        .on('postgres_changes', 
+          { 
+            event: '*', 
+            schema: 'public', 
+            table: 'goals',
+            filter: `user_id=eq.${user.id}`
+          }, 
+          (payload) => {
+            console.log('Goals table changed:', payload);
+            // Refresh goals when any change occurs
+            fetchGoalsFromSupabase();
+          }
+        )
+        .subscribe();
+
+      return () => {
+        goalsSubscription.unsubscribe();
+      };
+    };
+
+    const cleanup = setupRealtimeListener();
+    return () => {
+      cleanup.then(cleanupFn => cleanupFn?.());
+    };
+  }, []);
+
   const loadLocalData = async () => {
     try {
-      const [savedTasks, savedGoals] = await Promise.all([
-        getItem("tasks"),
-        getItem("goals"),
-      ]);
+      // Load tasks from local storage (for backward compatibility)
+      const savedTasks = await getItem("tasks");
       if (savedTasks !== null) {
         const parsedTasks = JSON.parse(savedTasks);
         if (Array.isArray(parsedTasks)) {
           setLocalTasks(parsedTasks);
         }
       }
-      if (savedGoals !== null) {
-        const parsedGoals = JSON.parse(savedGoals);
-        if (Array.isArray(parsedGoals)) {
-          setLocalGoals(parsedGoals);
-        }
-      }
+
+      // Load goals from Supabase instead of local storage
+      await fetchGoalsFromSupabase();
     } catch (storageError) {
       console.warn("Storage load failed, using defaults:", storageError);
+    }
+  };
+
+  const fetchGoalsFromSupabase = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data: goals, error } = await supabase
+        .from('goal_progress')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('status', 'active')
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('Error fetching goals from Supabase:', error);
+        return;
+      }
+
+      // Convert goal_progress format to Goal format expected by the provider
+      const convertedGoals = goals?.map(goal => ({
+        id: goal.goal_id,
+        title: goal.title,
+        description: goal.description,
+        target_date: goal.target_date,
+        status: goal.status,
+        progress: Math.round((goal.completion_ratio || 0) * 100),
+        created_at: goal.created_at,
+        updated_at: goal.updated_at,
+      })) || [];
+
+      setLocalGoals(convertedGoals);
+      console.log('Fetched goals from Supabase:', convertedGoals.length);
+    } catch (error) {
+      console.error('Error fetching goals from Supabase:', error);
     }
   };
 
@@ -425,6 +490,10 @@ export const [GoalsProvider, useGoals] = createContextHook<GoalsContextType>(() 
     };
   }, [tasks]);
 
+  const refreshGoals = useCallback(async () => {
+    await fetchGoalsFromSupabase();
+  }, []);
+
   return useMemo(() => ({
     tasks,
     goals,
@@ -436,5 +505,6 @@ export const [GoalsProvider, useGoals] = createContextHook<GoalsContextType>(() 
     getTasksStats,
     getGoalProgress,
     getTodaysProgress,
-  }), [tasks, goals, toggleTask, updateGoal, addGoal, deleteGoal, isLoading, getTasksStats, getGoalProgress, getTodaysProgress]);
+    refreshGoals,
+  }), [tasks, goals, toggleTask, updateGoal, addGoal, deleteGoal, isLoading, getTasksStats, getGoalProgress, getTodaysProgress, refreshGoals]);
 });

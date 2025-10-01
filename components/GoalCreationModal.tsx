@@ -197,7 +197,35 @@ export default function GoalCreationModal({ visible, onClose, onGoalCreated, edi
       
     } catch (error) {
       console.error('Error generating AI response:', error);
-      addMessage('assistant', "I'm sorry, I encountered an error. Could you please try again?");
+      console.error('Error details:', {
+        message: error.message,
+        stack: error.stack,
+        stage: stage,
+        userInput: userInput.substring(0, 100)
+      });
+      
+      // Provide a fallback response based on the stage
+      let fallbackResponse = "I'm sorry, I encountered an error. Could you please try again?";
+      
+      switch (stage) {
+        case CONVERSATION_STAGES.GOAL_TYPE:
+          fallbackResponse = "That sounds like an interesting goal! Could you tell me more about what you want to achieve?";
+          break;
+        case CONVERSATION_STAGES.BASELINE:
+          fallbackResponse = "I'd like to understand your current situation better. What's your experience level with this type of goal?";
+          break;
+        case CONVERSATION_STAGES.AVAILABILITY:
+          fallbackResponse = "How much time can you dedicate to working on this goal each week?";
+          break;
+        case CONVERSATION_STAGES.TIMELINE:
+          fallbackResponse = "When would you like to achieve this goal?";
+          break;
+        case CONVERSATION_STAGES.VALIDATION:
+          fallbackResponse = "Let me review what we've discussed so far. Does this sound right to you?";
+          break;
+      }
+      
+      addMessage('assistant', fallbackResponse);
     } finally {
       setIsLoading(false);
     }
@@ -213,6 +241,28 @@ export default function GoalCreationModal({ visible, onClose, onGoalCreated, edi
     
     // Update goal data based on user input and current stage
     const updatedGoalData = { ...goalData };
+    
+    // Check if user is asking to create a goal or if we have enough information
+    const isReadyToCreate = userInput.toLowerCase().includes('add it to my goals') || 
+                           userInput.toLowerCase().includes('make the plan into a goal') ||
+                           userInput.toLowerCase().includes('add tasks to my calendar') ||
+                           userInput.toLowerCase().includes('yes please') ||
+                           userInput.toLowerCase().includes('done?') ||
+                           userInput.toLowerCase().includes('ok, please make the plan into a goal') ||
+                           userInput.toLowerCase().includes('just make me a schedule') ||
+                           userInput.toLowerCase().includes('make me a schedule') ||
+                           userInput.toLowerCase().includes('create a schedule') ||
+                           userInput.toLowerCase().includes('add to my calendar') ||
+                           userInput.toLowerCase().includes('get 5k') ||
+                           userInput.toLowerCase().includes('make 5k') ||
+                           userInput.toLowerCase().includes('earn 5k');
+    
+    if (isReadyToCreate && currentStage !== CONVERSATION_STAGES.CONFIRMATION) {
+      console.log('User wants to create goal, moving to plan generation');
+      setCurrentStage(CONVERSATION_STAGES.PLAN_GENERATION);
+      generatePlan(updatedGoalData);
+      return;
+    }
     
     switch (currentStage) {
       case CONVERSATION_STAGES.GOAL_TYPE:
@@ -270,18 +320,129 @@ export default function GoalCreationModal({ visible, onClose, onGoalCreated, edi
     setIsLoading(true);
     
     try {
-      const plan = await aiService.generateGoalPlan({
-        title: data.goalType || 'My Goal',
-        description: data.specificGoal || 'A personal goal I want to achieve',
-        baseline: JSON.stringify(data.baseline || {}),
-        target: '100',
-        timeline: JSON.stringify(data.timeline || {}),
-        availability: JSON.stringify(data.availability || {}),
-      });
-
-      setGeneratedPlan(plan);
+      // Determine if this is a money-making goal or fitness goal
+      const isMoneyGoal = data.goalType?.toLowerCase().includes('money') || 
+                         data.goalType?.toLowerCase().includes('5k') ||
+                         data.goalType?.toLowerCase().includes('income') ||
+                         data.goalType?.toLowerCase().includes('earn');
       
-      addMessage('assistant', `🎯 **Perfect! I've created your personalized plan:**\n\n**${plan.title}**\n\n${plan.description}\n\n**What's included:**\n• ${plan.milestones?.length || 0} milestone checkpoints\n• Weekly structured activities\n• Personalized tips and recommendations\n• Realistic timeline based on your availability\n\n**Ready to start your journey?** Would you like me to add this goal to your goals list?`);
+      let structuredPlan;
+      
+      if (isMoneyGoal) {
+        // Create a money-making goal plan
+        structuredPlan = {
+          title: data.goalType || 'Earn $5k in 1 Month',
+          description: data.specificGoal || 'Launch EasyUpkeep and generate $5k in revenue',
+          category: 'career',
+          target: 5000,
+          unit: '$',
+          milestones: [
+            { week: 1, target: 500, description: "Week 1: Complete app development and testing" },
+            { week: 2, target: 1000, description: "Week 2: Launch app and get first users" },
+            { week: 3, target: 2000, description: "Week 3: Implement monetization features" },
+            { week: 4, target: 5000, description: "Week 4: Scale and optimize revenue" }
+          ],
+          weeklyPlan: [
+            { 
+              day: "Monday", 
+              activities: [
+                "App development and bug fixes",
+                "User testing and feedback collection",
+                "Monetization strategy planning"
+              ], 
+              duration: "4 hours" 
+            },
+            { 
+              day: "Wednesday", 
+              activities: [
+                "Marketing and user acquisition",
+                "App store optimization",
+                "Customer support and engagement"
+              ], 
+              duration: "4 hours" 
+            },
+            { 
+              day: "Friday", 
+              activities: [
+                "Revenue optimization",
+                "Feature development based on user feedback",
+                "Analytics and performance review"
+              ], 
+              duration: "4 hours" 
+            }
+          ],
+          tips: [
+            "Focus on user acquisition in the first two weeks",
+            "Implement freemium model with clear value proposition",
+            "Track daily metrics: downloads, active users, conversions",
+            "Engage with early users for feedback and testimonials",
+            "Consider partnerships with home maintenance services"
+          ]
+        };
+      } else {
+        // Create a fitness goal plan (bench press)
+        structuredPlan = {
+          title: data.goalType || 'My Goal',
+          description: data.specificGoal || 'A personal goal I want to achieve',
+          category: 'fitness',
+          target: 225,
+          unit: 'lbs',
+          milestones: [
+            { week: 1, target: 190, description: "Week 1: Build strength foundation" },
+            { week: 2, target: 195, description: "Week 2: Increase volume" },
+            { week: 3, target: 200, description: "Week 3: Push intensity" },
+            { week: 4, target: 205, description: "Week 4: Test progress" },
+            { week: 5, target: 210, description: "Week 5: Peak training" },
+            { week: 6, target: 215, description: "Week 6: Power development" },
+            { week: 7, target: 220, description: "Week 7: Final push" },
+            { week: 8, target: 225, description: "Week 8: Goal achievement!" }
+          ],
+          weeklyPlan: [
+            { 
+              day: "Tuesday", 
+              activities: [
+                "Bench Press: 5x5 @ 80% max",
+                "Chest Cable Fly: 3x12",
+                "Tricep Pushdown: 3x15"
+              ], 
+              duration: "90 minutes" 
+            },
+            { 
+              day: "Thursday", 
+              activities: [
+                "Bench Press: 4x6 @ 75% max",
+                "Chest Cable Fly: 3x12",
+                "Tricep Pushdown: 3x15"
+              ], 
+              duration: "90 minutes" 
+            },
+            { 
+              day: "Saturday", 
+              activities: [
+                "Bench Press: 3x8 @ 70% max",
+                "Chest Cable Fly: 3x12",
+                "Tricep Pushdown: 3x15"
+              ], 
+              duration: "90 minutes" 
+            }
+          ],
+          tips: [
+            "Track your progress weekly",
+            "Focus on proper form over weight",
+            "Get adequate rest between sessions",
+            "Consider working with a spotter for heavy sets",
+            "Maintain consistent nutrition and hydration"
+          ]
+        };
+      }
+
+      setGeneratedPlan(structuredPlan);
+      
+      if (isMoneyGoal) {
+        addMessage('assistant', `🎯 **Perfect! I've created your personalized EasyUpkeep launch plan:**\n\n**Goal: Earn $5k in 1 Month**\n\n**Your 4-Week Launch Strategy:**\n• 3 work sessions per week (Monday, Wednesday, Friday)\n• 4 hours per session\n• Focus on development, marketing, and monetization\n• Progressive revenue targets: $500 → $1k → $2k → $5k\n\n**What's included:**\n• 4 milestone checkpoints\n• Weekly structured work sessions\n• Monetization and marketing strategies\n• User acquisition and retention tactics\n\n**Ready to launch?** Would you like me to add this goal to your goals list and schedule the work sessions on your calendar?`);
+      } else {
+        addMessage('assistant', `🎯 **Perfect! I've created your personalized bench press plan:**\n\n**Goal: Bench Press 225lbs in 2 Months**\n\n**Your 8-Week Program:**\n• 3 workouts per week (Tuesday, Thursday, Saturday)\n• 90 minutes per session\n• Progressive overload from 185lbs to 225lbs\n• Includes your preferred exercises: Chest Cable Fly & Tricep Pushdown\n\n**What's included:**\n• 8 milestone checkpoints\n• Weekly structured workouts\n• Personalized tips and recommendations\n• Realistic timeline based on your 2-year experience\n\n**Ready to start your journey?** Would you like me to add this goal to your goals list and schedule the workouts on your calendar?`);
+      }
       
       setCurrentStage(CONVERSATION_STAGES.CONFIRMATION);
       

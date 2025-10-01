@@ -217,7 +217,10 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
             behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
             style={styles.keyboardView}
           >
-            <ScrollView contentContainerStyle={styles.scrollContent}>
+            <ScrollView 
+              contentContainerStyle={styles.scrollContent}
+              showsVerticalScrollIndicator={false}
+            >
             {/* Background Elements */}
             <View style={styles.backgroundElements}>
               <View style={styles.floatingCircle1} />
