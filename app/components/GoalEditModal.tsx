@@ -12,11 +12,16 @@ import {
   Alert,
   ActivityIndicator,
 } from 'react-native';
-import { X, Save, Trash2, Calendar } from 'lucide-react-native';
+import { X, Save, Trash2, Calendar, Lock } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../providers/ThemeProvider';
 import { useAuth } from '../../providers/AuthProvider';
-import { supabase } from '../../lib/supabase-client';
+import { useUser } from '../../providers/UserProvider';
+import { useSubscription } from '../../providers/SubscriptionProvider';
+import { supabase, createNewSupabaseClient } from '../../lib/supabase-client';
+import ColorPicker from './ColorPicker';
+import { getNextAvailableColor } from '../../lib/colorUtils';
+import { featureGate, Feature } from '../../services/featureGate';
 
 interface Goal {
   id?: string;
@@ -28,6 +33,7 @@ interface Goal {
   created_at: string;
   updated_at: string;
   completion_ratio?: number;
+  color?: string;
 }
 
 interface GoalEditModalProps {
@@ -41,19 +47,24 @@ interface GoalEditModalProps {
 export default function GoalEditModal({ visible, goal, onClose, onGoalUpdated, onGoalDeleted }: GoalEditModalProps) {
   const { colors, isDark } = useTheme();
   const { user } = useAuth();
+  const { user: userProfile } = useUser();
+  const { showUpgradeModal } = useSubscription();
   const insets = useSafeAreaInsets();
   
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [targetDate, setTargetDate] = useState('');
+  const [color, setColor] = useState('#3B82F6');
   const [loading, setLoading] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const isPremium = userProfile?.isPremium || false;
 
   useEffect(() => {
     if (visible && goal) {
       setTitle(goal.title || '');
       setDescription(goal.description || '');
       setTargetDate(goal.target_date ? goal.target_date.split('T')[0] : '');
+      setColor(goal.color || '#3B82F6');
     }
   }, [visible, goal]);
 
@@ -62,6 +73,21 @@ export default function GoalEditModal({ visible, goal, onClose, onGoalUpdated, o
       Alert.alert('Error', 'Please enter a title for your goal.');
       return;
     }
+
+    // Only use custom color if user is premium
+    const goalColor = isPremium ? color : (goal.color || featureGate.getDefaultGoalColor());
+    
+    // Immediately update the calendar with the new color before saving
+    const updatedGoal = {
+      ...goal,
+      title: title.trim(),
+      description: description.trim() || undefined,
+      target_date: targetDate ? new Date(targetDate).toISOString() : undefined,
+      color: goalColor, // Include color in the updated goal object
+    };
+    
+    // Trigger calendar update immediately
+    onGoalUpdated(updatedGoal);
 
     setLoading(true);
     try {
@@ -80,24 +106,43 @@ export default function GoalEditModal({ visible, goal, onClose, onGoalUpdated, o
         updateData.target_date = new Date(targetDate).toISOString();
       }
 
-      const { error } = await supabase
+      // Try to update with color field first
+      let { error } = await supabase
         .from('goals')
-        .update(updateData)
+        .update({ ...updateData, color: goalColor })
         .eq('id', goalId)
         .eq('user_id', user.id);
+
+      // If color field doesn't exist, try without it
+      if (error && (error.message.includes('color') || error.message.includes('column') || error.message.includes('schema'))) {
+        const fallbackResult = await supabase
+          .from('goals')
+          .update(updateData)
+          .eq('id', goalId)
+          .eq('user_id', user.id);
+        
+        error = fallbackResult.error;
+      }
 
       if (error) {
         throw error;
       }
 
-      const updatedGoal = {
-        ...goal,
-        title: title.trim(),
-        description: description.trim() || undefined,
-        target_date: targetDate ? new Date(targetDate).toISOString() : undefined,
-      };
+      // Verify the color was saved by fetching the updated goal
+      const { data: updatedGoalData, error: verifyError } = await supabase
+        .from('goals')
+        .select('*')
+        .eq('id', goalId)
+        .eq('user_id', user.id)
+        .single();
 
-      onGoalUpdated(updatedGoal);
+      if (verifyError) {
+        console.error('Error verifying goal update:', verifyError);
+      }
+
+      // Calendar has already been updated immediately above
+      // No need to call onGoalUpdated again
+      
       onClose();
     } catch (error) {
       console.error('Error updating goal:', error);
@@ -108,28 +153,27 @@ export default function GoalEditModal({ visible, goal, onClose, onGoalUpdated, o
   };
 
   const handleDelete = () => {
-    console.log('Delete button pressed');
     if (!goal) {
-      console.log('No goal to delete');
       return;
     }
 
-    console.log('Showing delete confirmation modal');
     setShowDeleteConfirm(true);
   };
 
 
   const confirmDelete = async () => {
-    console.log('Confirm delete called');
-    console.log('Goal object:', goal);
-    console.log('User object:', user);
-    
     if (!goal || !user) {
-      console.log('Missing goal or user:', { goal: !!goal, user: !!user });
       return;
     }
 
     setLoading(true);
+    
+    // Safety timeout to ensure loading state is reset
+    const timeoutId = setTimeout(() => {
+      console.log('GoalEditModal: safety timeout - resetting loading state');
+      setLoading(false);
+    }, 10000); // 10 second timeout
+    
     try {
       const goalId = goal.goal_id || goal.id;
       console.log('Goal ID to delete:', goalId);
@@ -153,12 +197,16 @@ export default function GoalEditModal({ visible, goal, onClose, onGoalUpdated, o
       }
 
       console.log('Goal deleted successfully from database');
+      console.log('Calling onGoalDeleted with goalId:', goalId);
       onGoalDeleted(goalId);
+      console.log('Calling onClose');
       onClose();
     } catch (error) {
       console.error('Error deleting goal:', error);
       Alert.alert('Error', `Failed to delete goal: ${error.message}`);
     } finally {
+      console.log('GoalEditModal: resetting loading state');
+      clearTimeout(timeoutId);
       setLoading(false);
     }
   };
@@ -179,6 +227,14 @@ export default function GoalEditModal({ visible, goal, onClose, onGoalUpdated, o
       presentationStyle="pageSheet"
       onRequestClose={onClose}
     >
+      {loading && (
+        <View style={[styles.loadingOverlay, { backgroundColor: 'rgba(0,0,0,0.5)' }]}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={[styles.loadingText, { color: colors.text }]}>
+            Deleting goal...
+          </Text>
+        </View>
+      )}
       <KeyboardAvoidingView 
         style={[styles.container, { backgroundColor: colors.background }]}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -258,6 +314,35 @@ export default function GoalEditModal({ visible, goal, onClose, onGoalUpdated, o
             <Text style={[styles.helpText, { color: colors.textSecondary }]}>
               Leave empty for no target date
             </Text>
+          </View>
+
+          {/* Color Picker */}
+          <View style={styles.section}>
+            <Text style={[styles.label, { color: colors.text }]}>Goal Color</Text>
+            {isPremium ? (
+              <ColorPicker
+                selectedColor={color}
+                onColorSelect={setColor}
+              />
+            ) : (
+              <TouchableOpacity
+                style={[styles.premiumColorSection, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                onPress={() => showUpgradeModal('color_picker')}
+              >
+                <View style={styles.premiumColorContent}>
+                  <View style={[styles.defaultColorPreview, { backgroundColor: goal?.color || featureGate.getDefaultGoalColor() }]} />
+                  <View style={styles.premiumColorTextContainer}>
+                    <Text style={[styles.premiumColorText, { color: colors.text }]}>
+                      Current Color
+                    </Text>
+                    <Text style={[styles.premiumColorSubtext, { color: colors.textSecondary }]}>
+                      Upgrade to change colors
+                    </Text>
+                  </View>
+                  <Lock size={20} color={colors.textSecondary} />
+                </View>
+              </TouchableOpacity>
+            )}
           </View>
 
           {/* Delete Button */}
@@ -470,5 +555,47 @@ const styles = StyleSheet.create({
   deleteConfirmButtonText: {
     fontSize: 16,
     fontWeight: '600',
+  },
+  loadingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1000,
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  premiumColorSection: {
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 16,
+    marginTop: 8,
+  },
+  premiumColorContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  defaultColorPreview: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+  },
+  premiumColorTextContainer: {
+    flex: 1,
+  },
+  premiumColorText: {
+    fontSize: 16,
+    fontWeight: '500',
+    marginBottom: 2,
+  },
+  premiumColorSubtext: {
+    fontSize: 14,
   },
 });

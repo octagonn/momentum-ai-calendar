@@ -12,14 +12,16 @@ import {
   ActivityIndicator,
   Alert,
 } from 'react-native';
-import { X, Send, Bot, CheckCircle } from 'lucide-react-native';
+import { X, Send, Bot, CheckCircle, Lock } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../providers/ThemeProvider';
 import { useAuth } from '../../providers/AuthProvider';
+import { useUser } from '../../providers/UserProvider';
 import { aiService } from '../../lib/ai-service';
 import { ensureUserProfile } from '../../services/goalPlanning';
 import { notificationService } from '../../services/notifications';
 import { supabase } from '../../lib/supabase-client';
+import { featureGate, Feature } from '../../services/featureGate';
 
 interface Message {
   id: string;
@@ -37,6 +39,7 @@ interface AIGoalCreationModalProps {
 export default function AIGoalCreationModal({ visible, onClose, onGoalCreated }: AIGoalCreationModalProps) {
   const { colors, isDark } = useTheme();
   const { user } = useAuth();
+  const { user: userProfile } = useUser();
   const insets = useSafeAreaInsets();
   const scrollViewRef = useRef<ScrollView>(null);
   
@@ -45,9 +48,11 @@ export default function AIGoalCreationModal({ visible, onClose, onGoalCreated }:
   const [isLoading, setIsLoading] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [conversationComplete, setConversationComplete] = useState(false);
+  const [isPremiumRequired, setIsPremiumRequired] = useState(false);
 
   useEffect(() => {
     if (visible) {
+      checkPremiumAccess();
       initializeConversation();
     } else {
       resetConversation();
@@ -60,6 +65,24 @@ export default function AIGoalCreationModal({ visible, onClose, onGoalCreated }:
     setIsLoading(false);
     setIsCreating(false);
     setConversationComplete(false);
+    setIsPremiumRequired(false);
+  };
+  
+  const checkPremiumAccess = async () => {
+    if (!user) return;
+    
+    try {
+      await featureGate.initialize(user.id);
+      const featureCheck = await featureGate.canAccessFeature(Feature.AI_GOAL_CREATION);
+      
+      if (!featureCheck.hasAccess) {
+        setIsPremiumRequired(true);
+      } else {
+        setIsPremiumRequired(false);
+      }
+    } catch (error) {
+      console.error('Error checking premium access:', error);
+    }
   };
 
   const initializeConversation = () => {
@@ -150,6 +173,7 @@ export default function AIGoalCreationModal({ visible, onClose, onGoalCreated }:
       const planResponse = await aiService.createGoalFromConversation(conversationHistory);
       
       if (planResponse.success && planResponse.goal && planResponse.tasks) {
+        // The database function will automatically assign a color if not provided
         // Store the goal and tasks in the database
         const { data: goal_id, error: rpcError } = await supabase.rpc('create_goal_with_tasks', {
           p_user_id: user.id,
@@ -241,8 +265,50 @@ export default function AIGoalCreationModal({ visible, onClose, onGoalCreated }:
           </TouchableOpacity>
         </View>
 
+        {/* Premium Gate Overlay */}
+        {isPremiumRequired && (
+          <View style={[styles.premiumOverlay, { backgroundColor: colors.background }]}>
+            <View style={styles.premiumContent}>
+              <View style={[styles.premiumIconContainer, { backgroundColor: colors.primary }]}>
+                <Lock size={48} color={colors.background} />
+              </View>
+              <Text style={[styles.premiumTitle, { color: colors.text }]}>
+                AI Goal Creation is a Premium Feature
+              </Text>
+              <Text style={[styles.premiumDescription, { color: colors.textSecondary }]}>
+                Let AI help you create personalized goals with smart scheduling, intelligent task breakdown, and progress tracking.
+              </Text>
+              <View style={styles.premiumBenefits}>
+                <Text style={[styles.benefitItem, { color: colors.text }]}>✓ AI-powered goal planning</Text>
+                <Text style={[styles.benefitItem, { color: colors.text }]}>✓ Smart task scheduling</Text>
+                <Text style={[styles.benefitItem, { color: colors.text }]}>✓ Personalized recommendations</Text>
+                <Text style={[styles.benefitItem, { color: colors.text }]}>✓ Progress insights</Text>
+              </View>
+              <TouchableOpacity 
+                style={[styles.upgradeButton, { backgroundColor: colors.primary }]}
+                onPress={() => {
+                  onClose();
+                  // Import and use showUpgradeModal from parent component
+                }}
+              >
+                <Text style={[styles.upgradeButtonText, { color: colors.background }]}>
+                  Upgrade to Premium
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={styles.dismissButton}
+                onPress={onClose}
+              >
+                <Text style={[styles.dismissButtonText, { color: colors.textSecondary }]}>
+                  Maybe Later
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
         {/* Progress indicator */}
-        <View style={styles.progressContainer}>
+        <View style={[styles.progressContainer, isPremiumRequired && styles.hidden]}>
           <View style={[styles.progressBar, { backgroundColor: colors.border }]}>
             <View 
               style={[
@@ -262,7 +328,7 @@ export default function AIGoalCreationModal({ visible, onClose, onGoalCreated }:
         {/* Messages */}
         <ScrollView 
           ref={scrollViewRef}
-          style={styles.messagesContainer}
+          style={[styles.messagesContainer, isPremiumRequired && styles.hidden]}
           contentContainerStyle={styles.messagesContent}
           showsVerticalScrollIndicator={false}
         >
@@ -278,7 +344,7 @@ export default function AIGoalCreationModal({ visible, onClose, onGoalCreated }:
         </ScrollView>
 
         {/* Input */}
-        <View style={[styles.inputContainer, { borderTopColor: colors.border }]}>
+        <View style={[styles.inputContainer, { borderTopColor: colors.border }, isPremiumRequired && styles.hidden]}>
           <TextInput
             style={[styles.textInput, { 
               backgroundColor: colors.surface, 
@@ -448,5 +514,66 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  hidden: {
+    display: 'none',
+  },
+  premiumOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
+  premiumContent: {
+    width: '100%',
+    maxWidth: 400,
+    alignItems: 'center',
+    paddingVertical: 40,
+  },
+  premiumIconContainer: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  premiumTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  premiumDescription: {
+    fontSize: 16,
+    textAlign: 'center',
+    lineHeight: 24,
+    marginBottom: 32,
+  },
+  premiumBenefits: {
+    width: '100%',
+    marginBottom: 32,
+  },
+  benefitItem: {
+    fontSize: 16,
+    lineHeight: 28,
+    marginBottom: 8,
+  },
+  upgradeButton: {
+    width: '100%',
+    paddingVertical: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  upgradeButtonText: {
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  dismissButton: {
+    paddingVertical: 12,
+  },
+  dismissButtonText: {
+    fontSize: 16,
   },
 });

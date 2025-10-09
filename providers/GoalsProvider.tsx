@@ -31,7 +31,6 @@ const defaultTasks: Task[] = [];
 const defaultGoals: Goal[] = [];
 
 export const [GoalsProvider, useGoals] = createContextHook<GoalsContextType>(() => {
-  console.log('GoalsProvider initializing');
   const [localTasks, setLocalTasks] = useState<Task[]>(defaultTasks);
   const [localGoals, setLocalGoals] = useState<Goal[]>(defaultGoals);
 
@@ -57,7 +56,77 @@ export const [GoalsProvider, useGoals] = createContextHook<GoalsContextType>(() 
           }, 
           (payload) => {
             console.log('Goals table changed:', payload);
-            // Refresh goals when any change occurs
+            
+            // Update local state immediately for better UX
+            if (payload.eventType === 'UPDATE' && payload.new) {
+              setLocalGoals(prevGoals => 
+                prevGoals.map(goal => 
+                  goal.id === payload.new.id ? { ...goal, ...payload.new } : goal
+                )
+              );
+            } else if (payload.eventType === 'INSERT' && payload.new) {
+              setLocalGoals(prevGoals => [...prevGoals, payload.new]);
+            } else if (payload.eventType === 'DELETE' && payload.old) {
+              setLocalGoals(prevGoals => 
+                prevGoals.filter(goal => goal.id !== payload.old.id)
+              );
+            }
+            
+            // Also refresh from database to ensure data consistency
+            fetchGoalsFromSupabase();
+          }
+        )
+        .subscribe();
+
+      // Also listen to goal_progress view changes for immediate updates
+      const goalProgressSubscription = supabase
+        .channel('goal_progress_changes')
+        .on('postgres_changes', 
+          { 
+            event: '*', 
+            schema: 'public', 
+            table: 'goal_progress',
+            filter: `user_id=eq.${user.id}`
+          }, 
+          (payload) => {
+            console.log('Goal progress view changed:', payload);
+            // Refresh goals when goal_progress view changes
+            fetchGoalsFromSupabase();
+          }
+        )
+        .subscribe();
+
+      // Listen for changes to tasks
+      const tasksSubscription = supabase
+        .channel('tasks_changes')
+        .on('postgres_changes', 
+          { 
+            event: '*', 
+            schema: 'public', 
+            table: 'tasks',
+            filter: `user_id=eq.${user.id}`
+          }, 
+          (payload) => {
+            console.log('Tasks table changed:', payload);
+            
+            // Update local state immediately for better UX
+            if (payload.eventType === 'UPDATE' && payload.new) {
+              setLocalTasks(prevTasks => 
+                prevTasks.map(task => 
+                  task.id === payload.new.id ? { ...task, ...payload.new } : task
+                )
+              );
+            } else if (payload.eventType === 'INSERT' && payload.new) {
+              setLocalTasks(prevTasks => [...prevTasks, payload.new]);
+            } else if (payload.eventType === 'DELETE' && payload.old) {
+              setLocalTasks(prevTasks => 
+                prevTasks.filter(task => task.id !== payload.old.id)
+              );
+            }
+            
+            // Also refresh from database to ensure data consistency
+            fetchTasks();
+            // Refresh goals to update completion ratios when tasks change
             fetchGoalsFromSupabase();
           }
         )
@@ -65,6 +134,8 @@ export const [GoalsProvider, useGoals] = createContextHook<GoalsContextType>(() 
 
       return () => {
         goalsSubscription.unsubscribe();
+        goalProgressSubscription.unsubscribe();
+        tasksSubscription.unsubscribe();
       };
     };
 
@@ -119,10 +190,10 @@ export const [GoalsProvider, useGoals] = createContextHook<GoalsContextType>(() 
         progress: Math.round((goal.completion_ratio || 0) * 100),
         created_at: goal.created_at,
         updated_at: goal.updated_at,
+        color: goal.color, // Include the color field
       })) || [];
 
       setLocalGoals(convertedGoals);
-      console.log('Fetched goals from Supabase:', convertedGoals.length);
     } catch (error) {
       console.error('Error fetching goals from Supabase:', error);
     }
@@ -134,9 +205,17 @@ export const [GoalsProvider, useGoals] = createContextHook<GoalsContextType>(() 
   const fetchTasks = useCallback(async () => {
     try {
       setIsLoading(true);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        console.log('No user found, skipping task fetch');
+        return;
+      }
+      
+
       const { data, error } = await supabase
-        .from('momentum_tasks')
+        .from('tasks')
         .select('*')
+        .eq('user_id', user.id)
         .order('created_at', { ascending: false });
 
       if (error) {
@@ -146,15 +225,39 @@ export const [GoalsProvider, useGoals] = createContextHook<GoalsContextType>(() 
 
       if (data) {
         // Convert Supabase data to our Task format
-        const tasks = data.map(task => ({
-          id: task.id,
-          title: task.title,
-          description: task.description || '',
-          completed: task.completed,
-          priority: task.priority,
-          time: task.due_date, // Using due_date as time for now
-          goalId: task.goal_id,
+        const tasks = await Promise.all(data.map(async (task) => {
+          // Try to find goal title from local goals first
+          let goalTitle = localGoals.find(goal => goal.id === task.goal_id)?.title;
+          
+          // If not found locally, fetch from database
+          if (!goalTitle && task.goal_id) {
+            try {
+              const { data: goalData, error } = await supabase
+                .from('goals')
+                .select('title')
+                .eq('id', task.goal_id)
+                .single();
+              
+              if (!error && goalData) {
+                goalTitle = goalData.title;
+              }
+            } catch (error) {
+              console.error('Error fetching goal title:', error);
+            }
+          }
+          
+          return {
+            id: task.id,
+            title: task.title,
+            description: task.notes || '',
+            completed: task.status === 'done',
+            due_at: task.due_at,
+            goal_id: task.goal_id,
+            goalTitle: goalTitle || 'Untitled Goal', // Add goal title for notifications
+            duration_minutes: task.duration_minutes,
+          };
         }));
+        
         setLocalTasks(tasks);
       }
     } catch (error) {
@@ -205,11 +308,62 @@ export const [GoalsProvider, useGoals] = createContextHook<GoalsContextType>(() 
     fetchGoals();
   }, [fetchTasks, fetchGoals]);
 
+  // Auto-cleanup overdue incomplete tasks after 1 week
+  useEffect(() => {
+    const cleanupOverdueTasks = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+
+        const oneWeekAgo = new Date();
+        oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+
+        // Find overdue incomplete tasks older than 1 week
+        const { data: overdueTasks, error } = await supabase
+          .from('tasks')
+          .select('*')
+          .eq('user_id', user.id)
+          .eq('status', 'pending')
+          .lt('due_at', oneWeekAgo.toISOString());
+
+        if (error) {
+          console.error('Error fetching overdue tasks for cleanup:', error);
+          return;
+        }
+
+        if (overdueTasks && overdueTasks.length > 0) {
+          // Delete the overdue tasks
+          const taskIds = overdueTasks.map(task => task.id);
+          const { error: deleteError } = await supabase
+            .from('tasks')
+            .delete()
+            .in('id', taskIds);
+
+          if (deleteError) {
+            console.error('Error deleting overdue tasks:', deleteError);
+          } else {
+            // Refresh tasks after cleanup
+            fetchTasks();
+          }
+        }
+      } catch (error) {
+        console.error('Error in task cleanup process:', error);
+      }
+    };
+
+    // Run cleanup when tasks are loaded
+    if (tasks && tasks.length > 0) {
+      cleanupOverdueTasks();
+    }
+  }, [tasks?.length, fetchTasks]);
+
   // Use local data
   const tasks = localTasks;
   const goals = localGoals;
 
   const toggleTask = useCallback(async (taskId: string) => {
+    if (!tasks) return;
+    
     const task = tasks.find(t => t.id === taskId);
     if (!task) return;
 
@@ -229,10 +383,10 @@ export const [GoalsProvider, useGoals] = createContextHook<GoalsContextType>(() 
     // Update in Supabase
     try {
       const { error } = await supabase
-        .from('momentum_tasks')
+        .from('tasks')
         .update({ 
-          completed: updates.completed,
-          status: updates.completed ? 'completed' : 'pending'
+          status: updates.completed ? 'done' : 'pending',
+          completed_at: updates.completed ? new Date().toISOString() : null
         })
         .eq('id', taskId);
 
@@ -251,12 +405,14 @@ export const [GoalsProvider, useGoals] = createContextHook<GoalsContextType>(() 
           
           // Update goal progress in database
           await supabase
-            .from('momentum_goals')
+            .from('goals')
             .update({ 
-              progress_percentage: goalProgress,
-              current_value: completedGoalTasks
+              status: goalProgress === 100 ? 'completed' : 'active'
             })
             .eq('id', task.goal_id);
+          
+          // Refresh goals to update completion ratios
+          fetchGoalsFromSupabase();
         }
       }
     } catch (error) {
@@ -268,6 +424,8 @@ export const [GoalsProvider, useGoals] = createContextHook<GoalsContextType>(() 
   }, [tasks]);
 
   const updateGoal = useCallback(async (goalId: string, updates: Partial<Goal>) => {
+    if (!goals) return;
+    
     // Optimistic update
     const updatedGoals = goals.map((g) =>
       g.id === goalId ? { ...g, ...updates } : g
@@ -283,17 +441,15 @@ export const [GoalsProvider, useGoals] = createContextHook<GoalsContextType>(() 
     try {
       const supabaseUpdates: any = {};
       
-      // Map our Goal format to Supabase format
+      // Map our Goal format to Supabase goals table format
       if (updates.title !== undefined) supabaseUpdates.title = updates.title;
       if (updates.description !== undefined) supabaseUpdates.description = updates.description;
-      if (updates.current !== undefined) supabaseUpdates.current_value = updates.current;
-      if (updates.target !== undefined) supabaseUpdates.target_value = updates.target;
-      if (updates.unit !== undefined) supabaseUpdates.unit = updates.unit;
+      if (updates.target_date !== undefined) supabaseUpdates.target_date = updates.target_date;
       if (updates.status !== undefined) supabaseUpdates.status = updates.status;
-      if (updates.plan !== undefined) supabaseUpdates.plan = updates.plan;
+      if (updates.color !== undefined) supabaseUpdates.color = updates.color;
 
       const { error } = await supabase
-        .from('momentum_goals')
+        .from('goals')
         .update(supabaseUpdates)
         .eq('id', goalId);
 
@@ -316,6 +472,8 @@ export const [GoalsProvider, useGoals] = createContextHook<GoalsContextType>(() 
       throw new Error('Goal must have title');
     }
     
+    if (!goals) return;
+    
     // Create optimistic goal with temporary ID
     const optimisticGoal = { ...newGoal, id: `temp-${Date.now()}` };
     const optimisticGoals = [...goals, optimisticGoal];
@@ -329,20 +487,14 @@ export const [GoalsProvider, useGoals] = createContextHook<GoalsContextType>(() 
     // Create in Supabase
     try {
       const { data, error } = await supabase
-        .from('momentum_goals')
+        .from('goals')
         .insert({
           title: newGoal.title,
           description: newGoal.description,
-          category: newGoal.category || 'personal',
-          current_value: newGoal.current_value || 0,
-          target_value: newGoal.target_value,
-          unit: newGoal.unit,
           status: newGoal.status || 'active',
-          progress_percentage: newGoal.progress_percentage || 0,
-          plan: newGoal.plan,
+          target_date: newGoal.target_date || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(), // 30 days from now
+          color: newGoal.color || '#3B82F6', // Default blue color
           user_id: newGoal.user_id,
-          start_date: new Date().toISOString(),
-          target_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(), // 30 days from now
         })
         .select()
         .single();
@@ -416,6 +568,8 @@ export const [GoalsProvider, useGoals] = createContextHook<GoalsContextType>(() 
   }, [goals]);
 
   const deleteGoal = useCallback(async (goalId: string) => {
+    if (!goals) return;
+    
     // Optimistic update
     const updatedGoals = goals.filter(g => g.id !== goalId);
     setLocalGoals(updatedGoals);
@@ -428,7 +582,7 @@ export const [GoalsProvider, useGoals] = createContextHook<GoalsContextType>(() 
     // Delete from Supabase
     try {
       const { error } = await supabase
-        .from('momentum_goals')
+        .from('goals')
         .delete()
         .eq('id', goalId);
 
@@ -449,6 +603,8 @@ export const [GoalsProvider, useGoals] = createContextHook<GoalsContextType>(() 
   }, [goals]);
 
   const getTasksStats = useCallback(() => {
+    if (!tasks) return { total: 0, completed: 0, weeklyProgress: 0 };
+    
     const completed = tasks.filter((t) => t.completed).length;
     const total = tasks.length;
     const weeklyProgress = total > 0 ? Math.round((completed / total) * 100) : 0;
@@ -458,6 +614,8 @@ export const [GoalsProvider, useGoals] = createContextHook<GoalsContextType>(() 
 
   // Enhanced progress tracking for goals
   const getGoalProgress = useCallback((goal: Goal) => {
+    if (!tasks) return 0;
+    
     // Calculate progress based on completed tasks for this goal
     const goalTasks = tasks.filter(task => task.goal_id === goal.id);
     if (goalTasks.length === 0) return 0;
@@ -468,6 +626,8 @@ export const [GoalsProvider, useGoals] = createContextHook<GoalsContextType>(() 
 
   // Get today's progress across all goals
   const getTodaysProgress = useCallback(() => {
+    if (!tasks) return { totalTasks: 0, completedTasks: 0, progressPercentage: 0 };
+    
     const today = new Date();
     const todayStr = today.toISOString().split('T')[0];
     

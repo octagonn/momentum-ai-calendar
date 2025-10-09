@@ -47,13 +47,18 @@ export class NotificationService {
         return;
       }
 
-      // Get push token
-      if (Device.isDevice) {
-        const token = await Notifications.getExpoPushTokenAsync({
-          projectId: process.env.EXPO_PUBLIC_PROJECT_ID,
-        });
-        this.pushToken = token.data;
-        console.log('Push token:', this.pushToken);
+      // Get push token (skip in development to avoid projectId issues)
+      if (Device.isDevice && __DEV__ === false) {
+        try {
+          const token = await Notifications.getExpoPushTokenAsync({
+            projectId: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+          });
+          this.pushToken = token.data;
+        } catch (error) {
+          // Continue without push token - local notifications will still work
+        }
+      } else if (Device.isDevice) {
+        console.warn('Push notifications disabled in development mode');
       } else {
         console.warn('Must use physical device for push notifications');
       }

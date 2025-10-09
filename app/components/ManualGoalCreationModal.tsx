@@ -13,11 +13,16 @@ import {
   Alert,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { X, Save, Calendar, Target } from 'lucide-react-native';
+import { X, Save, Calendar, Target, Lock } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../providers/ThemeProvider';
 import { useAuth } from '../../providers/AuthProvider';
-import { supabase } from '../../lib/supabase-client';
+import { useUser } from '../../providers/UserProvider';
+import { useSubscription } from '../../providers/SubscriptionProvider';
+import { supabase, createNewSupabaseClient } from '../../lib/supabase-client';
+import ColorPicker from './ColorPicker';
+import { getNextAvailableColor } from '../../lib/colorUtils';
+import { featureGate, Feature } from '../../services/featureGate';
 
 interface ManualGoalCreationModalProps {
   visible: boolean;
@@ -32,13 +37,17 @@ export default function ManualGoalCreationModal({
 }: ManualGoalCreationModalProps) {
   const { colors, isDark } = useTheme();
   const { user } = useAuth();
+  const { user: userProfile } = useUser();
+  const { showUpgradeModal } = useSubscription();
   const insets = useSafeAreaInsets();
   
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [targetDate, setTargetDate] = useState('');
+  const [color, setColor] = useState('#3B82F6');
   const [loading, setLoading] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const isPremium = userProfile?.isPremium || false;
 
   const handleSave = async () => {
     if (!title.trim()) {
@@ -53,14 +62,19 @@ export default function ManualGoalCreationModal({
 
     setLoading(true);
     try {
+      // Only use custom color if user is premium
+      const goalColor = isPremium ? color : featureGate.getDefaultGoalColor();
+      
       const goalData = {
         title: title.trim(),
         description: description.trim() || null,
         target_date: targetDate ? new Date(targetDate).toISOString() : null,
         status: 'active',
+        color: goalColor,
       };
 
-      const { data: goal, error } = await supabase
+      // Try to insert with color field first
+      let { data: goal, error } = await supabase
         .from('goals')
         .insert([{
           user_id: user.id,
@@ -68,6 +82,25 @@ export default function ManualGoalCreationModal({
         }])
         .select()
         .single();
+
+      // If color field doesn't exist, try without it
+      if (error && error.message.includes('color')) {
+        console.log('Color column not available, creating goal without color field');
+        const fallbackResult = await supabase
+          .from('goals')
+          .insert([{
+            user_id: user.id,
+            title: goalData.title,
+            description: goalData.description,
+            target_date: goalData.target_date,
+            status: goalData.status,
+          }])
+          .select()
+          .single();
+        
+        goal = fallbackResult.data;
+        error = fallbackResult.error;
+      }
 
       if (error) {
         throw error;
@@ -89,6 +122,7 @@ export default function ManualGoalCreationModal({
     setTitle('');
     setDescription('');
     setTargetDate('');
+    setColor('#3B82F6');
     setShowDatePicker(false);
   };
 
@@ -191,6 +225,35 @@ export default function ManualGoalCreationModal({
                 display={Platform.OS === 'ios' ? 'spinner' : 'default'}
                 onChange={handleDateChange}
               />
+            )}
+          </View>
+
+          {/* Color Picker */}
+          <View style={styles.section}>
+            <Text style={[styles.label, { color: colors.text }]}>Goal Color</Text>
+            {isPremium ? (
+              <ColorPicker
+                selectedColor={color}
+                onColorSelect={setColor}
+              />
+            ) : (
+              <TouchableOpacity
+                style={[styles.premiumColorSection, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                onPress={() => showUpgradeModal('color_picker')}
+              >
+                <View style={styles.premiumColorContent}>
+                  <View style={[styles.defaultColorPreview, { backgroundColor: featureGate.getDefaultGoalColor() }]} />
+                  <View style={styles.premiumColorTextContainer}>
+                    <Text style={[styles.premiumColorText, { color: colors.text }]}>
+                      Default Color (Blue)
+                    </Text>
+                    <Text style={[styles.premiumColorSubtext, { color: colors.textSecondary }]}>
+                      Upgrade to customize colors
+                    </Text>
+                  </View>
+                  <Lock size={20} color={colors.textSecondary} />
+                </View>
+              </TouchableOpacity>
             )}
           </View>
         </ScrollView>
@@ -328,5 +391,32 @@ const styles = StyleSheet.create({
   saveButtonText: {
     fontSize: 16,
     fontWeight: '600',
+  },
+  premiumColorSection: {
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 16,
+    marginTop: 8,
+  },
+  premiumColorContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  defaultColorPreview: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+  },
+  premiumColorTextContainer: {
+    flex: 1,
+  },
+  premiumColorText: {
+    fontSize: 16,
+    fontWeight: '500',
+    marginBottom: 2,
+  },
+  premiumColorSubtext: {
+    fontSize: 14,
   },
 });

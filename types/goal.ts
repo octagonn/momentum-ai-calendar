@@ -18,4 +18,5 @@ export interface Goal {
   target_date?: string;
   created_at?: string;
   updated_at?: string;
+  color?: string; // Goal color for visual identification
 }

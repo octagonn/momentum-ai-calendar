@@ -9,6 +9,9 @@ import { UserProvider } from "@/providers/UserProvider";
 import { GoalsProvider } from "@/providers/GoalsProvider";
 import { SupabaseProvider } from "@/providers/SupabaseProvider";
 import { AuthProvider } from "@/providers/AuthProvider";
+import { NotificationProvider } from "@/providers/NotificationProvider";
+import { SubscriptionProvider } from "@/providers/SubscriptionProvider";
+import { NotificationIntegration } from "@/components/NotificationIntegration";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import ErrorBoundary from "@/components/ErrorBoundary";
 
@@ -36,10 +39,8 @@ export default function RootLayout() {
   useEffect(() => {
     async function prepare() {
       try {
-        console.log('App preparing...');
         // Add any initialization logic here
         await new Promise(resolve => setTimeout(resolve, 100)); // Small delay to ensure everything is ready
-        console.log('App ready, hiding splash screen');
         await SplashScreen.hideAsync();
         setIsReady(true);
       } catch (e) {
@@ -60,15 +61,21 @@ export default function RootLayout() {
       <ThemeProvider>
         <AuthProvider>
           <UserProvider>
-            <SupabaseProvider>
-              <GoalsProvider>
-                <ErrorBoundary testID="error-boundary-root">
-                  <ProtectedRoute>
-                    <RootLayoutNav />
-                  </ProtectedRoute>
-                </ErrorBoundary>
-              </GoalsProvider>
-            </SupabaseProvider>
+            <SubscriptionProvider>
+              <SupabaseProvider>
+                <GoalsProvider>
+                  <NotificationProvider>
+                    <NotificationIntegration>
+                      <ErrorBoundary testID="error-boundary-root">
+                        <ProtectedRoute>
+                          <RootLayoutNav />
+                        </ProtectedRoute>
+                      </ErrorBoundary>
+                    </NotificationIntegration>
+                  </NotificationProvider>
+                </GoalsProvider>
+              </SupabaseProvider>
+            </SubscriptionProvider>
           </UserProvider>
         </AuthProvider>
       </ThemeProvider>

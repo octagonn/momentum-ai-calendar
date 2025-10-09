@@ -9,6 +9,7 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "sdkVersion": "54.0.0",
+    "projectId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
     "splash": {
       "image": "./assets/images/splash-icon.png",
       "resizeMode": "contain",
@@ -16,7 +17,10 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "app.rork.momentum-ios-app"
+      "bundleIdentifier": "app.rork.momentum-ios-app",
+      "infoPlist": {
+        "UIBackgroundModes": ["background-fetch", "background-processing"]
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -36,6 +40,14 @@
         "expo-router",
         {
           "origin": "https://rork.com/"
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/icon.png",
+          "color": "#ffffff",
+          "defaultChannel": "default"
         }
       ]
     ],

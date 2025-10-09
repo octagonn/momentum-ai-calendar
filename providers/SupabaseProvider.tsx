@@ -14,7 +14,6 @@ export const [SupabaseProvider, useSupabase] = createContextHook<SupabaseContext
   const [anonKey, setAnonKey] = useState<string | null>(process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? null);
 
   useEffect(() => {
-    console.log("SupabaseProvider init", { platform: Platform.OS, hasUrl: !!url, hasKey: !!anonKey });
   }, [url, anonKey]);
 
   const setKeys = useCallback((u: string, k: string) => {
