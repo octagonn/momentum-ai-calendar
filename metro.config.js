@@ -13,6 +13,13 @@ config.resolver.assetExts.push(
   'jpg'
 );
 
+// Fix for InternalBytecode.js error - disable source map symbolication in development
+if (process.env.NODE_ENV === 'development') {
+  config.symbolicator = {
+    customizeFrame: () => null,
+  };
+}
+
 module.exports = config;
 
 

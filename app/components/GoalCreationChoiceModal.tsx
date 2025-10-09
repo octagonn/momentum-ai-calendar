@@ -7,9 +7,11 @@ import {
   TouchableOpacity,
   Alert,
 } from 'react-native';
-import { X, Bot, Edit3, Sparkles, Target } from 'lucide-react-native';
+import { X, Bot, Edit3, Sparkles, Target, Lock } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../providers/ThemeProvider';
+import { useUser } from '../../providers/UserProvider';
+import { useSubscription } from '../../providers/SubscriptionProvider';
 
 interface GoalCreationChoiceModalProps {
   visible: boolean;
@@ -25,7 +27,10 @@ export default function GoalCreationChoiceModal({
   onChooseManual 
 }: GoalCreationChoiceModalProps) {
   const { colors, isDark } = useTheme();
+  const { user: userProfile } = useUser();
+  const { showUpgradeModal } = useSubscription();
   const insets = useSafeAreaInsets();
+  const isPremium = userProfile?.isPremium || false;
 
   return (
     <Modal
@@ -59,9 +64,17 @@ export default function GoalCreationChoiceModal({
             <TouchableOpacity
               style={[styles.optionCard, { 
                 backgroundColor: colors.surface,
-                borderColor: colors.border 
+                borderColor: colors.border,
+                opacity: isPremium ? 1 : 0.8
               }]}
-              onPress={onChooseAI}
+              onPress={() => {
+                if (isPremium) {
+                  onChooseAI();
+                } else {
+                  onClose();
+                  showUpgradeModal('ai_goal');
+                }
+              }}
               activeOpacity={0.7}
             >
               <View style={[styles.optionIcon, { backgroundColor: `${colors.primary}15` }]}>
@@ -75,10 +88,21 @@ export default function GoalCreationChoiceModal({
                   Chat with AI to create a personalized goal with automatic task planning
                 </Text>
                 <View style={styles.optionBadge}>
-                  <Sparkles size={12} color={colors.primary} />
-                  <Text style={[styles.badgeText, { color: colors.primary }]}>
-                    Recommended
-                  </Text>
+                  {isPremium ? (
+                    <>
+                      <Sparkles size={12} color={colors.primary} />
+                      <Text style={[styles.badgeText, { color: colors.primary }]}>
+                        Recommended
+                      </Text>
+                    </>
+                  ) : (
+                    <>
+                      <Lock size={12} color={colors.primary} />
+                      <Text style={[styles.badgeText, { color: colors.primary }]}>
+                        Premium
+                      </Text>
+                    </>
+                  )}
                 </View>
               </View>
             </TouchableOpacity>

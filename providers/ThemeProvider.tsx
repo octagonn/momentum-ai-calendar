@@ -54,7 +54,6 @@ const darkColors: Colors = {
 };
 
 export const [ThemeProvider, useTheme] = createContextHook<ThemeContextType>(() => {
-  console.log('ThemeProvider initializing');
   const [isDark, setIsDark] = useState(true);
 
   useEffect(() => {

@@ -11,25 +11,52 @@ import {
   Animated,
   StatusBar,
   Modal,
+  Alert,
+  ActivityIndicator,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
-import { Crown, Shield, FileText, Trash2, X, Database } from "lucide-react-native";
+import { Crown, Shield, FileText, X, Lock } from "lucide-react-native";
 import * as Haptics from "expo-haptics";
 import { useTheme } from "@/providers/ThemeProvider";
 import { useUser } from "@/providers/UserProvider";
 import { useAuth } from "@/providers/AuthProvider";
+import { useNotifications } from "@/providers/NotificationProvider";
+import { useSubscription } from "@/providers/SubscriptionProvider";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { SupabaseDashboard } from "@/components/SupabaseDashboard";
+import { supabase } from "@/lib/supabase-client";
+import { subscriptionService } from "@/services/subscriptionService";
 
 export default function SettingsScreen() {
   const { colors, isDark, toggleTheme } = useTheme();
   const { user, updateUser } = useUser();
   const { signOut } = useAuth();
+  const { isPremium, subscriptionTier, showUpgradeModal } = useSubscription();
+  const { 
+    hasPermission, 
+    permissionStatus, 
+    settings: notificationSettings, 
+    preferences: notificationPreferences,
+    requestPermission,
+    updateSettings: updateNotificationSettings,
+    updatePreferences: updateNotificationPreferences,
+    sendTestNotification
+  } = useNotifications();
+  
+  const [taskReminderMinutes, setTaskReminderMinutes] = useState(notificationPreferences.taskReminderMinutes);
+  
+  // Handle case where user is still loading or null
+  if (!user) {
+    return null; // This will be handled by ProtectedRoute
+  }
   const insets = useSafeAreaInsets();
   const scrollY = useRef(new Animated.Value(0)).current;
   const [privacyModalVisible, setPrivacyModalVisible] = useState<boolean>(false);
   const [termsModalVisible, setTermsModalVisible] = useState<boolean>(false);
-  const [supabaseDashboardVisible, setSupabaseDashboardVisible] = useState<boolean>(false);
+  const [changePasswordModalVisible, setChangePasswordModalVisible] = useState<boolean>(false);
+  const [currentPassword, setCurrentPassword] = useState<string>('');
+  const [newPassword, setNewPassword] = useState<string>('');
+  const [confirmPassword, setConfirmPassword] = useState<string>('');
+  const [passwordLoading, setPasswordLoading] = useState<boolean>(false);
 
   const handleToggle = async (setting: string, value: boolean) => {
     if (Platform.OS !== "web") {
@@ -52,16 +79,60 @@ export default function SettingsScreen() {
     if (Platform.OS !== "web") {
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     }
-    console.log('Upgrade to Pro pressed');
-    // Could navigate to subscription screen or open payment modal
+    showUpgradeModal('general');
   };
-
-  const handleChangeEmail = async () => {
+  
+  const handleManageSubscription = async () => {
     if (Platform.OS !== "web") {
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
-    console.log('Change email pressed');
-    // Could open email change modal
+    await subscriptionService.cancelSubscription();
+  };
+
+  const handleChangePassword = async () => {
+    if (Platform.OS !== "web") {
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+    setChangePasswordModalVisible(true);
+  };
+
+  const handlePasswordChange = async () => {
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      Alert.alert('Error', 'Please fill in all fields');
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      Alert.alert('Error', 'New passwords do not match');
+      return;
+    }
+
+    if (newPassword.length < 6) {
+      Alert.alert('Error', 'Password must be at least 6 characters long');
+      return;
+    }
+
+    setPasswordLoading(true);
+    try {
+      const { error } = await supabase.auth.updateUser({
+        password: newPassword
+      });
+
+      if (error) {
+        Alert.alert('Error', error.message);
+        return;
+      }
+
+      Alert.alert('Success', 'Password updated successfully');
+      setChangePasswordModalVisible(false);
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+    } catch (error) {
+      Alert.alert('Error', 'Failed to update password');
+    } finally {
+      setPasswordLoading(false);
+    }
   };
 
   const handlePrivacyPolicy = async () => {
@@ -78,13 +149,6 @@ export default function SettingsScreen() {
     setTermsModalVisible(true);
   };
 
-  const handleDeleteAccount = async () => {
-    if (Platform.OS !== "web") {
-      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-    }
-    console.log('Delete account pressed');
-    // Could show confirmation dialog
-  };
 
   const handleLogout = async () => {
     if (Platform.OS !== "web") {
@@ -525,36 +589,79 @@ export default function SettingsScreen() {
       >
 
         <View style={styles.subscriptionCard}>
-          <LinearGradient
-            colors={[colors.primary, colors.primaryLight]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.gradientContent}
-          >
-            <Text style={styles.subscriptionTitle}>Momentum Pro</Text>
-            <Text style={styles.subscriptionDescription}>
-              Unlock unlimited goals and advanced features
-            </Text>
-            
-            <View style={styles.featuresList}>
-              {features.map((feature) => (
-                <View key={feature} style={styles.featureItem}>
-                  <Text style={styles.featureBullet}>✓</Text>
-                  <Text style={styles.featureText}>{feature}</Text>
-                </View>
-              ))}
-            </View>
-            
-            <TouchableOpacity 
-              style={styles.upgradeButton} 
-              activeOpacity={0.8}
-              onPress={handleUpgradeToPro}
-              testID="upgrade-pro-button"
+          {isPremium ? (
+            <LinearGradient
+              colors={[colors.primary, colors.primaryLight]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.gradientContent}
             >
-              <Crown size={20} color={colors.primary} />
-              <Text style={styles.upgradeButtonText}>Upgrade to Pro - $9.99/month</Text>
-            </TouchableOpacity>
-          </LinearGradient>
+              <Crown size={48} color="white" />
+              <Text style={styles.subscriptionTitle}>Premium Member</Text>
+              <Text style={styles.subscriptionDescription}>
+                You have access to all premium features
+              </Text>
+              
+              <View style={styles.featuresList}>
+                <View style={styles.featureItem}>
+                  <Text style={styles.featureBullet}>✓</Text>
+                  <Text style={styles.featureText}>Unlimited Goals</Text>
+                </View>
+                <View style={styles.featureItem}>
+                  <Text style={styles.featureBullet}>✓</Text>
+                  <Text style={styles.featureText}>AI Goal Creation</Text>
+                </View>
+                <View style={styles.featureItem}>
+                  <Text style={styles.featureBullet}>✓</Text>
+                  <Text style={styles.featureText}>Custom Goal Colors</Text>
+                </View>
+                <View style={styles.featureItem}>
+                  <Text style={styles.featureBullet}>✓</Text>
+                  <Text style={styles.featureText}>Advanced Analytics</Text>
+                </View>
+              </View>
+              
+              <TouchableOpacity 
+                style={[styles.upgradeButton, { backgroundColor: 'rgba(255,255,255,0.2)' }]} 
+                activeOpacity={0.8}
+                onPress={handleManageSubscription}
+                testID="manage-subscription-button"
+              >
+                <Text style={[styles.upgradeButtonText, { color: 'white' }]}>Manage Subscription</Text>
+              </TouchableOpacity>
+            </LinearGradient>
+          ) : (
+            <LinearGradient
+              colors={[colors.primary, colors.primaryLight]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.gradientContent}
+            >
+              <Text style={styles.subscriptionTitle}>Momentum Pro</Text>
+              <Text style={styles.subscriptionDescription}>
+                $4.99/month • 7-day free trial for new users
+              </Text>
+              
+              <View style={styles.featuresList}>
+                {features.map((feature) => (
+                  <View key={feature} style={styles.featureItem}>
+                    <Text style={styles.featureBullet}>✓</Text>
+                    <Text style={styles.featureText}>{feature}</Text>
+                  </View>
+                ))}
+              </View>
+              
+              <TouchableOpacity 
+                style={styles.upgradeButton} 
+                activeOpacity={0.8}
+                onPress={handleUpgradeToPro}
+                testID="upgrade-pro-button"
+              >
+                <Crown size={20} color={colors.primary} />
+                <Text style={styles.upgradeButtonText}>Upgrade to Pro - $4.99/month</Text>
+              </TouchableOpacity>
+            </LinearGradient>
+          )}
         </View>
 
         <View style={styles.section}>
@@ -576,18 +683,46 @@ export default function SettingsScreen() {
             </View>
           </View>
           
-          <View style={[styles.settingItem, styles.settingItemLast]}>
+          <View style={styles.settingItem}>
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <Text style={styles.settingLabel}>Username</Text>
+                <Text style={styles.settingDescription}>Your unique identifier</Text>
+              </View>
+              <TextInput
+                style={styles.textInput}
+                value={user.username || ''}
+                onChangeText={(text) => updateUser({ username: text })}
+                placeholder="Enter username"
+                placeholderTextColor={colors.textMuted}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+            </View>
+          </View>
+          
+          <View style={styles.settingItem}>
             <View style={styles.settingRow}>
               <View style={styles.settingInfo}>
                 <Text style={styles.settingLabel}>Email</Text>
                 <Text style={styles.settingDescription}>{user.email}</Text>
               </View>
+            </View>
+          </View>
+          
+          <View style={[styles.settingItem, styles.settingItemLast]}>
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <Text style={styles.settingLabel}>Password</Text>
+                <Text style={styles.settingDescription}>Change your account password</Text>
+              </View>
               <TouchableOpacity 
                 style={styles.actionButton} 
                 activeOpacity={0.7}
-                onPress={handleChangeEmail}
-                testID="change-email-button"
+                onPress={handleChangePassword}
+                testID="change-password-button"
               >
+                <Lock size={16} color={colors.text} />
                 <Text style={styles.actionButtonText}>Change</Text>
               </TouchableOpacity>
             </View>
@@ -618,56 +753,149 @@ export default function SettingsScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Notifications</Text>
           
+          {!hasPermission && (
+            <View style={[styles.settingItem, { backgroundColor: colors.warning + '20', borderColor: colors.warning, borderWidth: 1 }]}>
+              <View style={styles.settingRow}>
+                <View style={styles.settingInfo}>
+                  <Text style={[styles.settingLabel, { color: colors.warning }]}>Notifications Disabled</Text>
+                  <Text style={styles.settingDescription}>
+                    Enable notifications to receive reminders and updates
+                  </Text>
+                </View>
+                <TouchableOpacity 
+                  style={[styles.actionButton, { backgroundColor: colors.warning }]} 
+                  activeOpacity={0.7}
+                  onPress={requestPermission}
+                  testID="enable-notifications-button"
+                >
+                  <Text style={[styles.actionButtonText, { color: 'white' }]}>Enable</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+          
           <View style={styles.settingItem}>
             <View style={styles.settingRow}>
               <View style={styles.settingInfo}>
-                <Text style={styles.settingLabel}>Goal Reminders</Text>
+                <Text style={styles.settingLabel}>Task Reminders</Text>
                 <Text style={styles.settingDescription}>
                   Get notified about upcoming tasks
                 </Text>
               </View>
               <Switch
-                value={user.settings.goalReminders}
-                onValueChange={(value) => handleToggle("goalReminders", value)}
+                value={notificationSettings.taskReminders}
+                onValueChange={(value) => updateNotificationSettings({ taskReminders: value })}
                 trackColor={{ false: colors.border, true: colors.primary }}
-                thumbColor={user.settings.goalReminders ? "white" : "#f4f3f4"}
+                thumbColor={notificationSettings.taskReminders ? "white" : "#f4f3f4"}
+                disabled={!hasPermission}
               />
             </View>
           </View>
+          
+          {notificationSettings.taskReminders && hasPermission && (
+            <View style={styles.settingItem}>
+              <View style={styles.settingRow}>
+                <View style={styles.settingInfo}>
+                  <Text style={styles.settingLabel}>Reminder Time</Text>
+                  <Text style={styles.settingDescription}>
+                    How many minutes before task to remind you
+                  </Text>
+                </View>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <TouchableOpacity
+                    style={[styles.actionButton, { paddingHorizontal: 8, paddingVertical: 4 }]}
+                    onPress={() => {
+                      const newValue = Math.max(5, taskReminderMinutes - 5);
+                      setTaskReminderMinutes(newValue);
+                      updateNotificationPreferences({ taskReminderMinutes: newValue });
+                    }}
+                    disabled={taskReminderMinutes <= 5}
+                  >
+                    <Text style={styles.actionButtonText}>-</Text>
+                  </TouchableOpacity>
+                  <Text style={[styles.settingLabel, { minWidth: 40, textAlign: 'center' }]}>
+                    {taskReminderMinutes}m
+                  </Text>
+                  <TouchableOpacity
+                    style={[styles.actionButton, { paddingHorizontal: 8, paddingVertical: 4 }]}
+                    onPress={() => {
+                      const newValue = Math.min(60, taskReminderMinutes + 5);
+                      setTaskReminderMinutes(newValue);
+                      updateNotificationPreferences({ taskReminderMinutes: newValue });
+                    }}
+                    disabled={taskReminderMinutes >= 60}
+                  >
+                    <Text style={styles.actionButtonText}>+</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          )}
           
           <View style={styles.settingItem}>
             <View style={styles.settingRow}>
               <View style={styles.settingInfo}>
-                <Text style={styles.settingLabel}>Weekly Reports</Text>
+                <Text style={styles.settingLabel}>Smart Goal Reminders</Text>
                 <Text style={styles.settingDescription}>
-                  Receive weekly progress summaries
+                  Get intelligent reminders when tasks become overdue
                 </Text>
               </View>
               <Switch
-                value={user.settings.weeklyReports}
-                onValueChange={(value) => handleToggle("weeklyReports", value)}
+                value={notificationSettings.goalReminders}
+                onValueChange={(value) => updateNotificationSettings({ goalReminders: value })}
                 trackColor={{ false: colors.border, true: colors.primary }}
-                thumbColor={user.settings.weeklyReports ? "white" : "#f4f3f4"}
+                thumbColor={notificationSettings.goalReminders ? "white" : "#f4f3f4"}
+                disabled={!hasPermission}
               />
             </View>
           </View>
           
-          <View style={[styles.settingItem, styles.settingItemLast]}>
-            <View style={styles.settingRow}>
-              <View style={styles.settingInfo}>
-                <Text style={styles.settingLabel}>Achievement Badges</Text>
-                <Text style={styles.settingDescription}>
-                  Celebrate when you hit milestones
-                </Text>
+          
+          
+          {hasPermission && (
+            <>
+              <View style={styles.settingItem}>
+                <View style={styles.settingRow}>
+                  <View style={styles.settingInfo}>
+                    <Text style={styles.settingLabel}>Test Notifications</Text>
+                    <Text style={styles.settingDescription}>
+                      Send a test notification to verify settings
+                    </Text>
+                  </View>
+                  <TouchableOpacity 
+                    style={styles.actionButton} 
+                    activeOpacity={0.7}
+                    onPress={sendTestNotification}
+                    testID="test-notification-button"
+                  >
+                    <Text style={styles.actionButtonText}>Test</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
-              <Switch
-                value={user.settings.achievementBadges}
-                onValueChange={(value) => handleToggle("achievementBadges", value)}
-                trackColor={{ false: colors.border, true: colors.primary }}
-                thumbColor={user.settings.achievementBadges ? "white" : "#f4f3f4"}
-              />
-            </View>
-          </View>
+              
+              <View style={[styles.settingItem, styles.settingItemLast]}>
+                <View style={styles.settingRow}>
+                  <View style={styles.settingInfo}>
+                    <Text style={styles.settingLabel}>Clear & Reschedule</Text>
+                    <Text style={styles.settingDescription}>
+                      Clear all notifications and reschedule them
+                    </Text>
+                  </View>
+                  <TouchableOpacity 
+                    style={[styles.actionButton, { backgroundColor: colors.warning }]} 
+                    activeOpacity={0.7}
+                    onPress={async () => {
+                      await notificationService.cancelAllNotifications();
+                      Alert.alert('Notifications Cleared', 'All notifications have been cleared and will be rescheduled automatically.');
+                    }}
+                    testID="clear-notifications-button"
+                  >
+                    <Text style={[styles.actionButtonText, { color: 'white' }]}>Clear</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </>
+          )}
         </View>
 
         <View style={styles.section}>
@@ -711,52 +939,8 @@ export default function SettingsScreen() {
             </View>
           </View>
           
-          <View style={[styles.settingItem, styles.settingItemLast]}>
-            <View style={styles.settingRow}>
-              <View style={styles.settingInfo}>
-                <Text style={styles.settingLabel}>Delete Account</Text>
-                <Text style={styles.settingDescription}>
-                  Permanently delete your account and data
-                </Text>
-              </View>
-              <TouchableOpacity
-                style={[styles.actionButton, styles.dangerButton]}
-                activeOpacity={0.7}
-                onPress={handleDeleteAccount}
-                testID="delete-account-button"
-              >
-                <Trash2 size={16} color={colors.danger} />
-                <Text style={[styles.actionButtonText, styles.dangerButtonText]}>
-                  Delete
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
         </View>
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Database Management</Text>
-          
-          <View style={styles.settingItem}>
-            <View style={styles.settingRow}>
-              <View style={styles.settingInfo}>
-                <Text style={styles.settingLabel}>Supabase Dashboard</Text>
-                <Text style={styles.settingDescription}>
-                  Manage database, users, and system health
-                </Text>
-              </View>
-              <TouchableOpacity
-                style={styles.actionButton}
-                activeOpacity={0.7}
-                onPress={() => setSupabaseDashboardVisible(true)}
-                testID="supabase-dashboard-button"
-              >
-                <Database size={16} color={colors.text} />
-                <Text style={styles.actionButtonText}>Open</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Account Actions</Text>
@@ -981,14 +1165,85 @@ export default function SettingsScreen() {
         </View>
       </Modal>
 
-      {/* Supabase Dashboard Modal */}
+      {/* Change Password Modal */}
       <Modal
-        visible={supabaseDashboardVisible}
+        visible={changePasswordModalVisible}
         animationType="slide"
-        presentationStyle="fullScreen"
-        onRequestClose={() => setSupabaseDashboardVisible(false)}
+        transparent={true}
+        onRequestClose={() => setChangePasswordModalVisible(false)}
       >
-        <SupabaseDashboard onClose={() => setSupabaseDashboardVisible(false)} />
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContainer}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Change Password</Text>
+              <TouchableOpacity
+                style={styles.closeButton}
+                onPress={() => setChangePasswordModalVisible(false)}
+                activeOpacity={0.7}
+              >
+                <X size={20} color={colors.text} />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.modalContent}>
+              <View style={styles.settingItem}>
+                <Text style={styles.settingLabel}>Current Password</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={currentPassword}
+                  onChangeText={setCurrentPassword}
+                  placeholder="Enter current password"
+                  placeholderTextColor={colors.textMuted}
+                  secureTextEntry
+                  autoCapitalize="none"
+                />
+              </View>
+              
+              <View style={styles.settingItem}>
+                <Text style={styles.settingLabel}>New Password</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={newPassword}
+                  onChangeText={setNewPassword}
+                  placeholder="Enter new password"
+                  placeholderTextColor={colors.textMuted}
+                  secureTextEntry
+                  autoCapitalize="none"
+                />
+              </View>
+              
+              <View style={styles.settingItem}>
+                <Text style={styles.settingLabel}>Confirm New Password</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={confirmPassword}
+                  onChangeText={setConfirmPassword}
+                  placeholder="Confirm new password"
+                  placeholderTextColor={colors.textMuted}
+                  secureTextEntry
+                  autoCapitalize="none"
+                />
+              </View>
+              
+              <TouchableOpacity
+                style={[styles.actionButton, { backgroundColor: colors.primary, marginTop: 20 }]}
+                onPress={handlePasswordChange}
+                disabled={passwordLoading}
+                activeOpacity={0.7}
+              >
+                {passwordLoading ? (
+                  <ActivityIndicator size="small" color="white" />
+                ) : (
+                  <>
+                    <Lock size={16} color="white" />
+                    <Text style={[styles.actionButtonText, { color: 'white' }]}>
+                      Update Password
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
       </Modal>
     </View>
   );

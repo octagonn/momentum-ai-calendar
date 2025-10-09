@@ -13,9 +13,10 @@ import { Plus, Target, Calendar, CheckCircle } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../providers/ThemeProvider';
 import { useAuth } from '../../providers/AuthProvider';
+import { useGoals } from '../../providers/GoalsProvider';
 import { supabase } from '../../lib/supabase-client';
+import { router } from 'expo-router';
 import GoalModal from '../components/GoalModal';
-import AIGoalCreationModal from '../components/AIGoalCreationModal';
 import GoalCreationChoiceModal from '../components/GoalCreationChoiceModal';
 import ManualGoalCreationModal from '../components/ManualGoalCreationModal';
 import TaskCreationModal from '../components/TaskCreationModal';
@@ -30,6 +31,7 @@ interface Goal {
   created_at: string;
   updated_at: string;
   completion_ratio?: number;
+  color?: string;
 }
 
 interface GoalWithProgress extends Goal {
@@ -39,6 +41,7 @@ interface GoalWithProgress extends Goal {
 export default function GoalsScreen() {
   const { colors, isDark } = useTheme();
   const { user } = useAuth();
+  const { updateGoal } = useGoals();
   const insets = useSafeAreaInsets();
   
   const [goals, setGoals] = useState<GoalWithProgress[]>([]);
@@ -46,7 +49,6 @@ export default function GoalsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [selectedGoal, setSelectedGoal] = useState<GoalWithProgress | null>(null);
   const [showGoalModal, setShowGoalModal] = useState(false);
-  const [showCreationModal, setShowCreationModal] = useState(false);
   const [showChoiceModal, setShowChoiceModal] = useState(false);
   const [showManualGoalModal, setShowManualGoalModal] = useState(false);
   const [showTaskCreationModal, setShowTaskCreationModal] = useState(false);
@@ -57,12 +59,35 @@ export default function GoalsScreen() {
 
     console.log('Fetching goals for user:', user.id);
     try {
-      const { data, error } = await supabase
+      // Try to fetch with color field first, fallback to without color if it fails
+      let { data, error } = await supabase
         .from('goal_progress')
         .select('*')
         .eq('user_id', user.id)
         .eq('status', 'active')
         .order('created_at', { ascending: false });
+
+      // If color field doesn't exist, try without it
+      if (error && (error.message.includes('color does not exist') || error.message.includes('color') || error.message.includes('column') || error.message.includes('schema'))) {
+        console.log('Color column not available in goal_progress view, falling back to basic query. Error:', error.message);
+        const fallbackResult = await supabase
+        .from('goals')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('status', 'active')
+        .order('created_at', { ascending: false });
+        
+        data = fallbackResult.data;
+        error = fallbackResult.error;
+        
+        // Add default color to goals if color field is not available
+        if (data) {
+          data = data.map(goal => ({
+            ...goal,
+            color: goal.color || '#3B82F6'
+          }));
+        }
+      }
 
       if (error) {
         console.error('Error fetching goals:', error);
@@ -70,7 +95,7 @@ export default function GoalsScreen() {
       }
 
       console.log('Fetched goals:', data?.length || 0, 'goals');
-      console.log('Sample goal:', data?.[0]);
+      console.log('Sample goal with color:', data?.[0]);
       setGoals(data || []);
     } catch (error) {
       console.error('Error fetching goals:', error);
@@ -98,9 +123,21 @@ export default function GoalsScreen() {
           table: 'goals',
           filter: `user_id=eq.${user.id}`
         }, 
-        () => {
-          console.log('Goals changed, refreshing...');
+        (payload) => {
+          console.log('Goals changed, refreshing...', payload);
           fetchGoals();
+          
+          // If it's an update and includes color change, update goals immediately
+          if (payload.eventType === 'UPDATE' && payload.new && payload.new.color !== payload.old?.color) {
+            console.log('Goal color changed, updating goal in real-time');
+            setGoals(prevGoals => 
+              prevGoals.map(goal => 
+                goal.goal_id === payload.new.id || goal.id === payload.new.id
+                  ? { ...goal, color: payload.new.color }
+                  : goal
+              )
+            );
+          }
         }
       )
       .subscribe();
@@ -151,7 +188,7 @@ export default function GoalsScreen() {
 
   const handleChooseAI = () => {
     setShowChoiceModal(false);
-    setShowCreationModal(true);
+    router.push('/(tabs)/chat');
   };
 
   const handleChooseManual = () => {
@@ -197,12 +234,31 @@ export default function GoalsScreen() {
     }
   };
 
-  const handleGoalUpdated = (updatedGoal: GoalWithProgress) => {
+  const handleGoalUpdated = (updatedGoal: Goal) => {
+    // Convert Goal to GoalWithProgress for local state
+    const goalWithProgress: GoalWithProgress = {
+      ...updatedGoal,
+      completion_ratio: updatedGoal.completion_ratio || 0,
+    };
+    
+    // Update local state
     setGoals(prev => prev.map(goal => 
       (goal.goal_id || goal.id) === (updatedGoal.goal_id || updatedGoal.id) 
-        ? updatedGoal 
+        ? goalWithProgress 
         : goal
     ));
+    
+    // Also update GoalsProvider for real-time updates across the app
+    const goalId = updatedGoal.goal_id || updatedGoal.id;
+    if (goalId) {
+      updateGoal(goalId, {
+        title: updatedGoal.title,
+        description: updatedGoal.description,
+        target_date: updatedGoal.target_date,
+        status: updatedGoal.status as "active" | "paused" | "completed",
+        color: updatedGoal.color,
+      });
+    }
   };
 
   const handleGoalDeleted = (goalId: string) => {
@@ -222,12 +278,12 @@ export default function GoalsScreen() {
       >
         <View style={styles.goalHeader}>
           <View style={styles.goalTitleContainer}>
-            <Target size={20} color={colors.primary} style={styles.goalIcon} />
+            <View style={[styles.goalColorIndicator, { backgroundColor: item.color || colors.primary }]} />
             <Text style={[styles.goalTitle, { color: colors.text }]} numberOfLines={2}>
               {item.title}
             </Text>
           </View>
-          <View style={[styles.statusBadge, { backgroundColor: colors.primary }]}>
+          <View style={[styles.statusBadge, { backgroundColor: item.color || colors.primary }]}>
             <Text style={styles.statusText}>{progressPercentage}%</Text>
           </View>
         </View>
@@ -245,7 +301,7 @@ export default function GoalsScreen() {
                 styles.progressFill,
                 { 
                   width: `${progressPercentage}%`,
-                  backgroundColor: colors.primary,
+                  backgroundColor: item.color || colors.primary,
                 }
               ]}
             />
@@ -351,12 +407,6 @@ export default function GoalsScreen() {
           onGoalDeleted={handleGoalDeleted}
         />
 
-      <AIGoalCreationModal
-        visible={showCreationModal}
-        onClose={() => setShowCreationModal(false)}
-        onGoalCreated={handleGoalCreated}
-      />
-
       <GoalCreationChoiceModal
         visible={showChoiceModal}
         onClose={() => setShowChoiceModal(false)}
@@ -439,9 +489,12 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     marginRight: 12,
   },
-  goalIcon: {
-    marginRight: 8,
-    marginTop: 2,
+  goalColorIndicator: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    marginRight: 12,
+    marginTop: 6,
   },
   goalTitle: {
     fontSize: 18,

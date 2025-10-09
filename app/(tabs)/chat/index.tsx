@@ -1,622 +1,424 @@
-import React, { useState, useRef, useEffect, useCallback } from "react";
+import React, { useState, useRef, useEffect } from 'react';
 import {
-  StyleSheet,
-  Text,
   View,
-  ScrollView,
-  TextInput,
+  Text,
+  StyleSheet,
   TouchableOpacity,
+  TextInput,
+  ScrollView,
   KeyboardAvoidingView,
   Platform,
-  Animated,
-  Dimensions,
-  StatusBar,
-} from "react-native";
-import { Send, Zap, Calendar, Target, TrendingUp, Sparkles, Mic, Image } from "lucide-react-native";
-import * as Haptics from "expo-haptics";
-import { LinearGradient } from "expo-linear-gradient";
+  ActivityIndicator,
+  Alert,
+} from 'react-native';
+import { Send, Bot, CheckCircle } from 'lucide-react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useTheme } from '@/providers/ThemeProvider';
+import { useAuth } from '@/providers/AuthProvider';
+import { aiService } from '@/lib/ai-service';
+import { ensureUserProfile } from '@/services/goalPlanning';
+import { notificationService } from '@/services/notifications';
+import { supabase } from '@/lib/supabase-client';
+import { router } from 'expo-router';
 
-import { useTheme } from "@/providers/ThemeProvider";
-import { Message } from "@/types/chat";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { aiService } from "@/lib/ai-service";
+interface Message {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp: Date;
+}
 
 export default function ChatScreen() {
   const { colors, isDark } = useTheme();
+  const { user } = useAuth();
   const insets = useSafeAreaInsets();
-  const { width } = Dimensions.get('window');
   const scrollViewRef = useRef<ScrollView>(null);
-  const [input, setInput] = useState("");
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: "welcome",
-      text: "👋 Hi there! I'm your AI coach and I'm here to help you achieve your goals.\n\n**What would you like to work on today?**\n\nI can help you:\n• Set up new goals and break them into actionable steps\n• Plan your week and organize your tasks\n• Review your progress and suggest improvements\n• Build new habits and routines\n• Overcome obstacles and stay motivated\n\nJust tell me what's on your mind, or use one of the quick actions below to get started!",
-      role: "ai",
-      timestamp: new Date(),
-    },
-  ]);
-
-  const fadeAnim = useRef(new Animated.Value(0)).current;
+  
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [inputText, setInputText] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
+  const [conversationComplete, setConversationComplete] = useState(false);
 
   useEffect(() => {
-    Animated.timing(fadeAnim, {
-      toValue: 1,
-      duration: 500,
-      useNativeDriver: true,
-    }).start();
-  }, [fadeAnim]);
-  
-  const quickActions = [
-    { icon: Zap, label: "Fitness Goal", prompt: "I want to set a new fitness goal" },
-    { icon: Calendar, label: "Plan Week", prompt: "Help me plan my week" },
-    { icon: Target, label: "SOS Day", prompt: "I need help organizing my day" },
-    { icon: TrendingUp, label: "Progress", prompt: "Review my progress" },
-    { icon: Sparkles, label: "New Habit", prompt: "Help me build a new habit" },
-  ];
-
-  const sendMessage = async () => {
-    if (!input.trim()) return;
-
-    if (Platform.OS !== "web") {
-      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    }
-
-    const userMessage: Message = {
-      id: Date.now().toString(),
-      text: input,
-      role: "user",
-      timestamp: new Date(),
-    };
-
-    setMessages((prev) => [...prev, userMessage]);
-    const currentInput = input;
-    setInput("");
-
-    scrollViewRef.current?.scrollToEnd({ animated: true });
-
-    try {
-      // Prepare messages for AI service
-      const messagesForAI = [
-        ...messages.map(msg => ({ role: msg.role, content: msg.text })),
-        { role: "user" as const, content: currentInput }
-      ];
-
-      console.log('💬 Chat Debug Info:');
-      console.log('- Total messages:', messagesForAI.length);
-      console.log('- User input:', currentInput);
-      console.log('- All messages:', messagesForAI);
-      console.log('- AI Service available:', !!aiService);
-
-      // Call AI service directly
-      console.log('🔄 Calling AI service...');
-      const response = await aiService.generateResponse(messagesForAI);
-      
-      console.log('🤖 AI Response received:', response);
-      console.log('📝 Response content:', response.content);
-
-      const aiMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        text: response.content,
-        role: "ai",
-        timestamp: new Date(),
-      };
-
-      setMessages((prev) => [...prev, aiMessage]);
-      scrollViewRef.current?.scrollToEnd({ animated: true });
-    } catch (error) {
-      console.error('Error sending message:', error);
-      
-      // Fallback response
-      const errorMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        text: "I'm sorry, I encountered an error. Please try again.",
-        role: "ai",
-        timestamp: new Date(),
-      };
-
-      setMessages((prev) => [...prev, errorMessage]);
-      scrollViewRef.current?.scrollToEnd({ animated: true });
-    }
-  };
-
-  const handleQuickAction = useCallback(async (prompt: string) => {
-    if (!prompt.trim() || prompt.length > 500) return;
-    
-    if (Platform.OS !== "web") {
-      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    }
-    
-    const sanitized = prompt.trim();
-    setInput(sanitized);
-    console.log(`Quick action selected: ${sanitized}`);
+    initializeConversation();
   }, []);
 
-  const handleMicPress = async () => {
-    if (Platform.OS !== "web") {
-      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  const resetConversation = () => {
+    setMessages([]);
+    setInputText('');
+    setIsLoading(false);
+    setIsCreating(false);
+    setConversationComplete(false);
+  };
+
+  const initializeConversation = () => {
+    const welcomeMessage: Message = {
+      id: Date.now().toString(),
+      role: 'assistant',
+      content: "Hi! I'm here to help you create a personalized goal and training plan. Tell me about what you want to achieve - what's your goal?",
+      timestamp: new Date(),
+    };
+    setMessages([welcomeMessage]);
+  };
+
+  const addMessage = (role: 'user' | 'assistant', content: string) => {
+    const newMessage: Message = {
+      id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      role,
+      content,
+      timestamp: new Date(),
+    };
+    setMessages(prev => [...prev, newMessage]);
+    
+    // Scroll to bottom after message is added
+    setTimeout(() => {
+    scrollViewRef.current?.scrollToEnd({ animated: true });
+    }, 100);
+  };
+
+  const handleSendMessage = async () => {
+    if (!inputText.trim() || isLoading || isCreating) return;
+
+    const userMessage = inputText.trim();
+    setInputText('');
+    addMessage('user', userMessage);
+
+    setIsLoading(true);
+
+    try {
+      // Get the conversation history for context
+      const conversationHistory = messages.map(msg => ({
+        role: msg.role,
+        content: msg.content
+      }));
+
+      // Add the current user message
+      conversationHistory.push({
+        role: 'user',
+        content: userMessage
+      });
+
+      // Call AI service to get response
+      const response = await aiService.generateResponse(conversationHistory);
+      
+      if (response.success && response.message) {
+        addMessage('assistant', response.message);
+        
+        // Check if the AI indicates the conversation is complete
+        if (response.message.includes('GOAL_CREATION_COMPLETE') || 
+            response.message.includes('I have all the information I need') ||
+            response.message.includes('Let me create your personalized plan')) {
+          setConversationComplete(true);
+          await handleGoalCreation(conversationHistory);
+        }
+      } else {
+        addMessage('assistant', 'Sorry, I had trouble processing that. Could you please try again?');
+      }
+    } catch (error) {
+      console.error('Error in AI conversation:', error);
+      addMessage('assistant', 'Sorry, I encountered an error. Please try again.');
+    } finally {
+      setIsLoading(false);
     }
-    console.log('Microphone pressed - voice input');
-    // Could implement voice recording functionality
   };
 
-  const handleImagePress = async () => {
-    if (Platform.OS !== "web") {
-      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  const handleGoalCreation = async (conversationHistory: Array<{role: string, content: string}>) => {
+    if (!user) {
+      addMessage('assistant', 'Please make sure you\'re logged in to create a goal.');
+      return;
     }
-    console.log('Image pressed - photo/camera input');
-    // Could implement image picker functionality
+
+    setIsCreating(true);
+    addMessage('assistant', 'Perfect! I have all the information I need. Let me create your personalized goal plan...');
+
+    try {
+      // Ensure user profile exists
+      await ensureUserProfile(supabase, user.id);
+
+      // Call the AI service to create the goal plan from the conversation
+      const planResponse = await aiService.createGoalFromConversation(conversationHistory);
+      
+      if (planResponse.success && planResponse.goal && planResponse.tasks) {
+        // The database function will automatically assign a color if not provided
+        // Store the goal and tasks in the database
+        const { data: goal_id, error: rpcError } = await supabase.rpc('create_goal_with_tasks', {
+          p_user_id: user.id,
+          p_goal: planResponse.goal,
+          p_tasks: planResponse.tasks
+        });
+
+        if (rpcError) {
+          throw new Error(`Failed to create goal: ${rpcError.message}`);
+        }
+
+        // Schedule notifications for the tasks
+        try {
+          await notificationService.scheduleMultipleTaskNotifications(planResponse.tasks);
+        } catch (notificationError) {
+          console.warn('Failed to schedule notifications:', notificationError);
+        }
+
+        addMessage('assistant', `🎉 **Goal Created Successfully!**\n\nYour goal "${planResponse.goal.title}" has been created with ${planResponse.tasks.length} scheduled tasks. You can now track your progress and follow your personalized plan!\n\n✅ Goal added to your goals list\n✅ Tasks scheduled on your calendar\n✅ Notifications set up for reminders\n\nGood luck on your journey! 🚀`);
+
+        // Navigate to goals page after a short delay
+        setTimeout(() => {
+          router.push('/(tabs)/goals');
+        }, 3000);
+
+      } else {
+        throw new Error(planResponse.error || 'Failed to create goal plan');
+      }
+    } catch (error) {
+      console.error('Error creating goal:', error);
+      addMessage('assistant', `Sorry, I encountered an error while creating your goal: ${error.message}. Please try again.`);
+    } finally {
+      setIsCreating(false);
+    }
   };
 
-  const formatTime = (date: Date) => {
-    return date.toLocaleTimeString("en-US", {
-      hour: "numeric",
-      minute: "2-digit",
-    });
+  const handleKeyPress = (event: any) => {
+    if (event.nativeEvent.key === 'Enter' && !event.nativeEvent.shiftKey) {
+      event.preventDefault();
+      handleSendMessage();
+    }
   };
 
-  const styles = StyleSheet.create({
-    container: {
-      flex: 1,
-      backgroundColor: colors.primary,
-    },
-    patternLine: {
-      position: 'absolute',
-      width: 150,
-      height: 2,
-      backgroundColor: 'white',
-      transform: [{ rotate: '45deg' }],
-    },
-    patternCircle: {
-      position: 'absolute',
-      borderRadius: 50,
-      borderWidth: 2,
-      borderColor: 'white',
-      opacity: 0.15,
-    },
-    patternDot: {
-      position: 'absolute',
-      width: 6,
-      height: 6,
-      borderRadius: 3,
-      backgroundColor: 'white',
-      opacity: 0.2,
-    },
-    patternWave: {
-      position: 'absolute',
-      height: 20,
-      width: 100,
-      borderRadius: 10,
-      borderWidth: 2,
-      borderColor: 'white',
-      opacity: 0.1,
-      transform: [{ scaleX: 2 }],
-    },
-    patternHexagon: {
-      position: 'absolute',
-      width: 30,
-      height: 30,
-      opacity: 0.15,
-    },
-    patternTriangle: {
-      position: 'absolute',
-      width: 0,
-      height: 0,
-      borderLeftWidth: 10,
-      borderRightWidth: 10,
-      borderBottomWidth: 20,
-      borderLeftColor: 'transparent',
-      borderRightColor: 'transparent',
-      borderBottomColor: 'white',
-      opacity: 0.15,
-    },
-    patternSquare: {
-      position: 'absolute',
-      width: 15,
-      height: 15,
-      backgroundColor: 'white',
-      opacity: 0.15,
-      transform: [{ rotate: '45deg' }],
-    },
-    backgroundContainer: {
-      position: 'absolute',
-      top: 0,
-      left: 0,
-      right: 0,
-      bottom: 0,
-      zIndex: 0,
-    },
-    gradientBackground: {
-      position: 'absolute',
-      top: 0,
-      left: 0,
-      right: 0,
-      bottom: 0,
-    },
-    patternOverlay: {
-      position: 'absolute',
-      top: 0,
-      left: 0,
-      right: 0,
-      bottom: 0,
-      opacity: 0.15,
-      zIndex: 2,
-      overflow: 'hidden',
-    },
-    gradientOverlay: {
-      position: 'absolute',
-      top: 0,
-      left: 0,
-      right: 0,
-      bottom: 0,
-      zIndex: 1,
-      opacity: 0.7,
-    },
-
-    messagesContainer: {
-      flex: 1,
-      paddingHorizontal: 20,
-      paddingTop: Math.max(20, insets.top + 20),
-      zIndex: 10,
-    },
-    messagesCard: {
-      backgroundColor: isDark ? 'rgba(20, 20, 40, 0.8)' : 'rgba(255, 255, 255, 0.9)',
-      borderRadius: 24,
-      padding: 20,
-      marginBottom: 16,
-      shadowColor: isDark ? 'rgba(0, 0, 0, 0.5)' : 'rgba(0, 0, 0, 0.1)',
-      shadowOffset: { width: 0, height: 6 },
-      shadowOpacity: 0.15,
-      shadowRadius: 16,
-      elevation: 4,
-      borderWidth: isDark ? 1 : 0,
-      borderColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'transparent',
-    },
-    messageWrapper: {
-      marginBottom: 16,
-    },
-    messageBubble: {
-      maxWidth: "80%",
-      padding: 16,
-      borderRadius: 20,
-    },
-    userBubble: {
-      alignSelf: "flex-end",
-      backgroundColor: colors.primary,
-      shadowColor: colors.primary,
-      shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: 0.2,
-      shadowRadius: 8,
-      elevation: 2,
-    },
-    aiBubble: {
-      alignSelf: "flex-start",
-      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(255, 255, 255, 0.7)',
-      borderWidth: 1,
-      borderColor: isDark ? 'rgba(255, 255, 255, 0.2)' : 'rgba(255, 255, 255, 0.8)',
-    },
-    messageText: {
-      fontSize: 16,
-      lineHeight: 24,
-      fontFamily: 'Inter_500Medium',
-    },
-    userText: {
-      color: "white",
-      fontWeight: "500" as const,
-    },
-    aiText: {
-      color: colors.text,
-      fontWeight: "500" as const,
-    },
-    timestamp: {
-      fontSize: 12,
-      color: colors.textMuted,
-      marginTop: 6,
-      fontFamily: 'Inter_500Medium',
-    },
-    userTimestamp: {
-      alignSelf: "flex-end",
-    },
-    aiTimestamp: {
-      alignSelf: "flex-start",
-    },
-    inputContainer: {
-      backgroundColor: isDark ? 'rgba(20, 20, 40, 0.8)' : 'rgba(255, 255, 255, 0.9)',
-      borderTopWidth: 1,
-      borderTopColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.05)',
-      paddingTop: 16,
-      paddingHorizontal: 20,
-      paddingBottom: Platform.OS === "ios" ? 34 : 20,
-      shadowColor: isDark ? 'rgba(0, 0, 0, 0.5)' : 'rgba(0, 0, 0, 0.1)',
-      shadowOffset: { width: 0, height: -4 },
-      shadowOpacity: 0.1,
-      shadowRadius: 12,
-      elevation: 8,
-      zIndex: 10,
-    },
-    quickActions: {
-      flexDirection: "row",
-      marginBottom: 16,
-    },
-    quickActionScroll: {
-      paddingVertical: 4,
-    },
-    quickActionButton: {
-      flexDirection: "row",
-      alignItems: "center",
-      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(255, 255, 255, 0.5)',
-      borderWidth: 1,
-      borderColor: isDark ? 'rgba(255, 255, 255, 0.2)' : 'rgba(255, 255, 255, 0.6)',
-      borderRadius: 20,
-      paddingHorizontal: 14,
-      paddingVertical: 10,
-      marginRight: 10,
-      shadowColor: isDark ? 'rgba(0, 0, 0, 0.5)' : 'rgba(0, 0, 0, 0.1)',
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.1,
-      shadowRadius: 4,
-      elevation: 2,
-      maxWidth: width * 0.6,
-    },
-    quickActionText: {
-      fontSize: 14,
-      color: colors.textSecondary,
-      marginLeft: 8,
-      fontFamily: 'Inter_500Medium',
-      fontWeight: "500" as const,
-    },
-    inputRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(255, 255, 255, 0.5)',
-      borderWidth: 1,
-      borderColor: isDark ? 'rgba(255, 255, 255, 0.2)' : 'rgba(255, 255, 255, 0.6)',
-      borderRadius: 24,
-      paddingLeft: 12,
-      paddingRight: 4,
-      marginBottom: 8,
-    },
-    inputActions: {
-      flexDirection: "row",
-      marginBottom: 12,
-      justifyContent: "space-around",
-      display: 'none', // Hide the original input actions row
-    },
-    inputActionButton: {
-      width: 40,
-      height: 40,
-      borderRadius: 20,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    inlineActionButton: {
-      width: 40,
-      height: 40,
-      borderRadius: 20,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    textInput: {
-      flex: 1,
-      backgroundColor: 'transparent',
-      paddingHorizontal: 8,
-      paddingVertical: 12,
-      fontSize: 16,
-      color: colors.text,
-      fontFamily: 'Inter_500Medium',
-    },
-    sendButton: {
-      width: 40,
-      height: 40,
-      borderRadius: 20,
-      backgroundColor: colors.primary,
-      alignItems: "center",
-      justifyContent: "center",
-      shadowColor: colors.primary,
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.3,
-      shadowRadius: 4,
-      elevation: 4,
-      marginLeft: 4,
-    },
-    sendButtonDisabled: {
-      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)',
-      shadowOpacity: 0,
-      elevation: 0,
-    },
-  });
+  const renderMessage = (message: Message) => {
+    const isUser = message.role === 'user';
+    
+    return (
+      <View key={message.id} style={[styles.messageContainer, isUser ? styles.userMessage : styles.assistantMessage]}>
+        {!isUser && (
+          <View style={[styles.avatar, { backgroundColor: colors.primary }]}>
+            <Bot size={16} color={colors.background} />
+          </View>
+        )}
+        <View style={[styles.messageBubble, isUser ? styles.userBubble : styles.assistantBubble]}>
+          <Text style={[styles.messageText, isUser ? styles.userText : styles.assistantText]}>
+            {message.content}
+          </Text>
+          <Text style={[styles.timestamp, isUser ? styles.userTimestamp : styles.assistantTimestamp]}>
+            {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+          </Text>
+        </View>
+      </View>
+    );
+  };
 
   return (
     <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-      keyboardVerticalOffset={Platform.OS === "ios" ? 88 : 0}
+      style={[styles.container, { backgroundColor: colors.background }]}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
-      
-      <View style={styles.backgroundContainer}>
-        <LinearGradient
-          colors={[colors.primary, colors.primaryLight]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.gradientBackground}
-        />
-        <LinearGradient
-          colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.15)', 'rgba(0,0,0,0.05)']}
-          locations={[0, 0.7, 1]}
-          style={styles.gradientOverlay}
-        />
-        <View style={styles.patternOverlay}>
-          {/* Simplified pattern overlay */}
-          {Array.from({ length: 12 }).map((_, i) => {
-            const lineStyle = {
-              ...styles.patternLine,
-              top: i * 30,
-              left: -50 + (i % 3) * 40,
-              opacity: 0.1,
-              width: 150,
-            };
-            return <View key={`pattern-${i}`} style={lineStyle} />;
-          })}
-          {Array.from({ length: 6 }).map((_, i) => {
-            const circleStyle = {
-              ...styles.patternCircle,
-              width: 50,
-              height: 50,
-              top: 30 + (i * 60),
-              right: 10 + (i % 3) * 40,
-              opacity: 0.08,
-            };
-            return <View key={`circle-${i}`} style={circleStyle} />;
-          })}
-          {/* Simplified dots pattern */}
-          {Array.from({ length: 20 }).map((_, i) => {
-            const dotStyle = {
-              ...styles.patternDot,
-              top: 20 + (i % 10) * 40,
-              left: 20 + Math.floor(i / 10) * 200,
-              opacity: 0.12,
-            };
-            return <View key={`dot-${i}`} style={dotStyle} />;
-          })}
+      {/* Header */}
+      <View style={[styles.header, { borderBottomColor: colors.border, paddingTop: insets.top + 16 }]}>
+        <Text style={[styles.headerTitle, { color: colors.text }]}>
+          Create Goal with AI
+        </Text>
+      </View>
+
+      {/* Progress indicator */}
+      <View style={styles.progressContainer}>
+        <View style={[styles.progressBar, { backgroundColor: colors.border }]}>
+          <View 
+            style={[
+              styles.progressFill, 
+              { 
+                backgroundColor: conversationComplete ? colors.success : colors.primary,
+                width: conversationComplete ? '100%' : '33%'
+              }
+            ]} 
+          />
         </View>
+        <Text style={[styles.progressText, { color: colors.textSecondary }]}>
+          {conversationComplete ? 'Creating your plan...' : '33% Complete'}
+        </Text>
       </View>
       
-      <Animated.ScrollView
+      {/* Messages */}
+      <ScrollView 
         ref={scrollViewRef}
         style={styles.messagesContainer}
+        contentContainerStyle={styles.messagesContent}
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.messagesCard}>
-          {messages.map((message) => (
-            <Animated.View
-              key={message.id}
-              style={[
-                styles.messageWrapper,
-                {
-                  opacity: fadeAnim,
-                  transform: [
-                    {
-                      translateY: fadeAnim.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: [20, 0],
-                      }),
-                    },
-                  ],
-                },
-              ]}
-              testID={`message-${message.id}`}
-            >
-              <View
-                style={[
-                  styles.messageBubble,
-                  message.role === "user" ? styles.userBubble : styles.aiBubble,
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.messageText,
-                    message.role === "user" ? styles.userText : styles.aiText,
-                  ]}
-                >
-                  {message.text}
+        {messages.map(renderMessage)}
+        {isLoading && (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="small" color={colors.primary} />
+            <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
+              AI is thinking...
                 </Text>
               </View>
-              <Text
-                style={[
-                  styles.timestamp,
-                  message.role === "user" ? styles.userTimestamp : styles.aiTimestamp,
-                ]}
-              >
-                {formatTime(message.timestamp)}
-              </Text>
-            </Animated.View>
-          ))}
-        </View>
-      </Animated.ScrollView>
-
-      <View style={styles.inputContainer}>
-        <View style={styles.inputActions}>
-          <TouchableOpacity 
-            style={styles.inputActionButton} 
-            activeOpacity={0.7}
-            onPress={handleMicPress}
-            testID="mic-button-top"
-          >
-            <Mic size={20} color={colors.textSecondary} />
-          </TouchableOpacity>
-          <TouchableOpacity 
-            style={styles.inputActionButton} 
-            activeOpacity={0.7}
-            onPress={handleImagePress}
-            testID="image-button-top"
-          >
-            <Image size={20} color={colors.textSecondary} />
-          </TouchableOpacity>
-        </View>
-        
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={styles.quickActions}
-          contentContainerStyle={styles.quickActionScroll}
-        >
-          {quickActions.map((action) => (
-            <TouchableOpacity
-              key={action.label}
-              style={styles.quickActionButton}
-              onPress={() => handleQuickAction(action.prompt)}
-              activeOpacity={0.7}
-              testID={`quick-action-${action.label}`}
-            >
-              <action.icon size={18} color={colors.textSecondary} />
-              <Text style={styles.quickActionText}>{action.label}</Text>
-            </TouchableOpacity>
-          ))}
+        )}
         </ScrollView>
 
-        <View style={styles.inputRow}>
-          <TouchableOpacity 
-            style={styles.inlineActionButton} 
-            activeOpacity={0.7}
-            onPress={handleMicPress}
-            testID="mic-button-inline"
-          >
-            <Mic size={20} color={colors.textSecondary} />
-          </TouchableOpacity>
+      {/* Input */}
+      <View style={[styles.inputContainer, { borderTopColor: colors.border }]}>
           <TextInput
-            style={styles.textInput}
-            value={input}
-            onChangeText={setInput}
-            placeholder="Tell me about your goals..."
-            placeholderTextColor={colors.textMuted}
+          style={[styles.textInput, { 
+            backgroundColor: colors.surface, 
+            color: colors.text,
+            borderColor: colors.border 
+          }]}
+          value={inputText}
+          onChangeText={setInputText}
+          placeholder="Type your message..."
+          placeholderTextColor={colors.textSecondary}
             multiline
             maxLength={500}
-            onSubmitEditing={sendMessage}
-            returnKeyType="send"
-            testID="chat-input"
-          />
-          <TouchableOpacity 
-            style={styles.inlineActionButton} 
-            activeOpacity={0.7}
-            onPress={handleImagePress}
-            testID="image-button-inline"
-          >
-            <Image size={20} color={colors.textSecondary} />
-          </TouchableOpacity>
+          editable={!isLoading && !isCreating}
+          onSubmitEditing={handleKeyPress}
+        />
           <TouchableOpacity
             style={[
               styles.sendButton,
-              !input.trim() && styles.sendButtonDisabled,
-            ]}
-            onPress={sendMessage}
-            disabled={!input.trim()}
-            activeOpacity={0.7}
-            testID="send-button"
-          >
-            <Send size={20} color="white" />
+            { 
+              backgroundColor: inputText.trim() ? colors.primary : colors.border,
+              opacity: (isLoading || isCreating || !inputText.trim()) ? 0.5 : 1
+            }
+          ]}
+          onPress={handleSendMessage}
+          disabled={isLoading || isCreating || !inputText.trim()}
+        >
+          {isCreating ? (
+            <ActivityIndicator size="small" color={colors.background} />
+          ) : (
+            <Send size={20} color={colors.background} />
+          )}
           </TouchableOpacity>
-        </View>
       </View>
     </KeyboardAvoidingView>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingBottom: 15,
+    borderBottomWidth: 1,
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  progressContainer: {
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+  },
+  progressBar: {
+    height: 4,
+    borderRadius: 2,
+    marginBottom: 5,
+  },
+  progressFill: {
+    height: '100%',
+    borderRadius: 2,
+  },
+  progressText: {
+    fontSize: 12,
+    textAlign: 'center',
+  },
+  messagesContainer: {
+    flex: 1,
+  },
+  messagesContent: {
+    padding: 20,
+    paddingBottom: 10,
+  },
+  messageContainer: {
+    flexDirection: 'row',
+    marginBottom: 15,
+    alignItems: 'flex-end',
+  },
+  userMessage: {
+    justifyContent: 'flex-end',
+  },
+  assistantMessage: {
+    justifyContent: 'flex-start',
+  },
+  avatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  messageBubble: {
+    maxWidth: '80%',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 20,
+  },
+  userBubble: {
+    backgroundColor: '#007AFF',
+    marginLeft: 'auto',
+  },
+  assistantBubble: {
+    backgroundColor: '#F2F2F7',
+  },
+  messageText: {
+    fontSize: 16,
+    lineHeight: 22,
+  },
+  userText: {
+    color: 'white',
+  },
+  assistantText: {
+    color: '#000',
+  },
+  timestamp: {
+    fontSize: 11,
+    marginTop: 4,
+    opacity: 0.7,
+  },
+  userTimestamp: {
+    color: 'white',
+    textAlign: 'right',
+  },
+  assistantTimestamp: {
+    color: '#666',
+  },
+  loadingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+  },
+  loadingText: {
+    marginLeft: 8,
+    fontSize: 14,
+  },
+  inputContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    paddingHorizontal: 20,
+    paddingVertical: 15,
+    borderTopWidth: 1,
+  },
+  textInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    marginRight: 12,
+    maxHeight: 100,
+    fontSize: 16,
+  },
+  sendButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+});

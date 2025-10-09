@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -38,6 +38,7 @@ interface Goal {
   created_at: string;
   updated_at: string;
   completion_ratio?: number;
+  color?: string;
 }
 
 interface GoalModalProps {
@@ -59,22 +60,99 @@ export default function GoalModal({ visible, goal, onClose, onTaskToggle, onGoal
   const [showGoalEditModal, setShowGoalEditModal] = useState(false);
   const [showTaskEditModal, setShowTaskEditModal] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [currentGoal, setCurrentGoal] = useState<Goal | null>(goal);
+  
+  // Use ref to store the callback to avoid stale closures
+  const onGoalUpdatedRef = useRef(onGoalUpdated);
+  onGoalUpdatedRef.current = onGoalUpdated;
+
+  // Update current goal when prop changes
+  useEffect(() => {
+    setCurrentGoal(goal);
+  }, [goal]);
+
+  // Set up real-time subscription for goal updates
+  useEffect(() => {
+    if (!visible || (!goal?.id && !goal?.goal_id)) return;
+
+    const goalId = goal.id || goal.goal_id;
+    
+    const goalSubscription = supabase
+      .channel(`goal_${goalId}_changes`)
+      .on('postgres_changes', 
+        { 
+          event: 'UPDATE', 
+          schema: 'public', 
+          table: 'goals',
+          filter: `id=eq.${goalId}`
+        }, 
+        (payload) => {
+          if (payload.new) {
+            setCurrentGoal(payload.new as Goal);
+            // Also notify parent component
+            if (onGoalUpdatedRef.current) {
+              onGoalUpdatedRef.current(payload.new as Goal);
+            }
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      goalSubscription.unsubscribe();
+    };
+  }, [visible, goal?.id, goal?.goal_id]);
+
+  // Additional real-time listener for all user goals (backup)
+  useEffect(() => {
+    if (!visible || !user) return;
+
+    const userGoalsSubscription = supabase
+      .channel(`user_goals_${user.id}_changes`)
+      .on('postgres_changes', 
+        { 
+          event: 'UPDATE', 
+          schema: 'public', 
+          table: 'goals',
+          filter: `user_id=eq.${user.id}`
+        }, 
+        (payload) => {
+          if (payload.new && currentGoal && (payload.new.id === currentGoal.id || payload.new.id === currentGoal.goal_id)) {
+            setCurrentGoal(payload.new as Goal);
+            // Also notify parent component
+            if (onGoalUpdatedRef.current) {
+              onGoalUpdatedRef.current(payload.new as Goal);
+            }
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      userGoalsSubscription.unsubscribe();
+    };
+  }, [visible, user, currentGoal]);
 
   useEffect(() => {
     if (visible && goal) {
-      fetchTasks();
+      fetchTasks(goal);
+      // Refresh goal data when modal becomes visible to ensure latest data
+      if (onGoalUpdatedRef.current) {
+        onGoalUpdatedRef.current(goal);
+      }
     }
   }, [visible, goal]);
 
-  const fetchTasks = async () => {
-    if (!goal || !user) return;
+  const fetchTasks = async (goalToFetch?: Goal | null) => {
+    const goalToUse = goalToFetch || currentGoal;
+    if (!goalToUse || !user) return;
 
     setLoading(true);
     try {
       const { data, error } = await supabase
         .from('tasks')
         .select('*')
-        .eq('goal_id', goal.goal_id || goal.id)
+        .eq('goal_id', goalToUse.goal_id || goalToUse.id)
         .eq('user_id', user.id)
         .order('status', { ascending: true })
         .order('due_at', { ascending: true });
@@ -84,8 +162,6 @@ export default function GoalModal({ visible, goal, onClose, onTaskToggle, onGoal
         return;
       }
 
-      console.log('GoalModal: Fetched tasks for goal', goal.id, ':', data?.length || 0, 'tasks');
-      console.log('GoalModal: Sample task:', data?.[0]);
       setTasks(data || []);
     } catch (error) {
       console.error('Error fetching tasks:', error);
@@ -124,6 +200,11 @@ export default function GoalModal({ visible, goal, onClose, onTaskToggle, onGoal
 
       // Notify parent component
       onTaskToggle(task.id, newStatus === 'done');
+      
+      // Refresh goal data to update completion ratios immediately
+      if (onGoalUpdatedRef.current && currentGoal) {
+        onGoalUpdatedRef.current(currentGoal);
+      }
     } catch (error) {
       console.error('Error updating task:', error);
       Alert.alert('Error', 'Failed to update task');
@@ -144,18 +225,32 @@ export default function GoalModal({ visible, goal, onClose, onTaskToggle, onGoal
     setTasks(prev => prev.map(t => t.id === updatedTask.id ? updatedTask : t));
     setShowTaskEditModal(false);
     setSelectedTask(null);
+    // Refresh goal data to update completion ratios
+    if (onGoalUpdatedRef.current && currentGoal) {
+      onGoalUpdatedRef.current(currentGoal);
+    }
   };
 
   const handleTaskDeleted = (taskId: string) => {
     setTasks(prev => prev.filter(t => t.id !== taskId));
     setShowTaskEditModal(false);
     setSelectedTask(null);
+    // Refresh goal data to update completion ratios
+    if (onGoalUpdatedRef.current && currentGoal) {
+      onGoalUpdatedRef.current(currentGoal);
+    }
   };
 
   const handleGoalUpdated = (updatedGoal: Goal) => {
-    if (onGoalUpdated) {
-      onGoalUpdated(updatedGoal);
+    // Update local state immediately for instant UI update
+    setCurrentGoal(updatedGoal);
+    
+    // Notify parent component
+    if (onGoalUpdatedRef.current) {
+      onGoalUpdatedRef.current(updatedGoal);
     }
+    
+    // Close the edit modal
     setShowGoalEditModal(false);
   };
 
@@ -205,7 +300,7 @@ export default function GoalModal({ visible, goal, onClose, onTaskToggle, onGoal
   const pendingTasks = sortedTasks.filter(task => task.status !== 'done');
   const completedTasks = sortedTasks.filter(task => task.status === 'done');
 
-  if (!goal) return null;
+  if (!currentGoal) return null;
 
   return (
     <Modal
@@ -217,14 +312,14 @@ export default function GoalModal({ visible, goal, onClose, onTaskToggle, onGoal
       <View style={[styles.container, { backgroundColor: colors.background }]}>
         <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
           <View style={styles.headerContent}>
-            <Target size={24} color={colors.primary} style={styles.headerIcon} />
+            <View style={[styles.goalColorIndicator, { backgroundColor: currentGoal.color || colors.primary }]} />
             <View style={styles.headerText}>
               <Text style={[styles.goalTitle, { color: colors.text }]} numberOfLines={2}>
-                {goal.title}
+                {currentGoal.title}
               </Text>
-              {goal.target_date && (
+              {currentGoal.target_date && (
                 <Text style={[styles.targetDate, { color: colors.textSecondary }]}>
-                  Target: {new Date(goal.target_date).toLocaleDateString()}
+                  Target: {new Date(currentGoal.target_date).toLocaleDateString()}
                 </Text>
               )}
             </View>
@@ -242,10 +337,10 @@ export default function GoalModal({ visible, goal, onClose, onTaskToggle, onGoal
           </View>
         </View>
 
-        {goal.description && (
+        {currentGoal.description && (
           <View style={[styles.descriptionContainer, { borderBottomColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)' }]}>
             <Text style={[styles.description, { color: colors.text }]}>
-              {goal.description}
+              {currentGoal.description}
             </Text>
           </View>
         )}
@@ -323,7 +418,7 @@ export default function GoalModal({ visible, goal, onClose, onTaskToggle, onGoal
       {/* Edit Modals */}
       <GoalEditModal
         visible={showGoalEditModal}
-        goal={goal}
+        goal={currentGoal}
         onClose={() => setShowGoalEditModal(false)}
         onGoalUpdated={handleGoalUpdated}
         onGoalDeleted={handleGoalDeleted}
@@ -455,9 +550,12 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     marginRight: 16,
   },
-  headerIcon: {
+  goalColorIndicator: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
     marginRight: 12,
-    marginTop: 2,
+    marginTop: 4,
   },
   headerText: {
     flex: 1,

@@ -17,23 +17,25 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useTheme } from "@/providers/ThemeProvider";
 import { useUser } from "@/providers/UserProvider";
 import { useGoals } from "@/providers/GoalsProvider";
+import TaskDetailModal from "@/app/components/TaskDetailModal";
+import ViewAllTasksModal from "@/app/components/ViewAllTasksModal";
 
 
 
 export default function HomeScreen() {
-  console.log('HomeScreen rendering');
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
-  console.log('Theme loaded:', { isDark, colors: !!colors });
 
   const { user } = useUser();
   const { tasks, goals, toggleTask, getTasksStats, getTodaysProgress } = useGoals();
+  
+  // Handle case where user is still loading or null
+  if (!user) {
+    return null; // This will be handled by ProtectedRoute
+  }
   const stats = getTasksStats();
   const todaysProgress = getTodaysProgress();
 
-  // Debug logging
-  console.log('HomeScreen - Goals loaded:', goals.length);
-  console.log('HomeScreen - Sample goal:', goals[0]);
 
   // Get today's tasks from goals
   const getTodaysTasksFromGoals = () => {
@@ -56,10 +58,10 @@ export default function HomeScreen() {
               id: `${goal.id}-${dayName}-${index}`,
               title: activity,
               time: `${weeklyPlan.duration}`,
-              priority: "medium" as const,
               completed: false,
               goalId: goal.id,
               goalTitle: goal.title,
+              goalColor: goal.color,
             });
           });
         }
@@ -70,10 +72,61 @@ export default function HomeScreen() {
   };
 
   const todaysTasksFromGoals = getTodaysTasksFromGoals();
-  // Only show tasks that are linked to actual goals in the database
-  const allTodaysTasks = todaysTasksFromGoals;
+  
+  // Get today's database tasks
+  const getTodaysDatabaseTasks = () => {
+    const today = new Date();
+    
+    // Get today's date in user's local timezone (YYYY-MM-DD format)
+    const todayLocalString = today.getFullYear() + '-' + 
+      String(today.getMonth() + 1).padStart(2, '0') + '-' + 
+      String(today.getDate()).padStart(2, '0');
+    
+    
+    const filteredTasks = tasks.filter(task => {
+      if (!task.due_at) {
+        return false;
+      }
+      
+      // Convert task due_at to local date string for comparison
+      const taskDate = new Date(task.due_at);
+      const taskLocalDateString = taskDate.getFullYear() + '-' + 
+        String(taskDate.getMonth() + 1).padStart(2, '0') + '-' + 
+        String(taskDate.getDate()).padStart(2, '0');
+      const matches = taskLocalDateString === todayLocalString;
+      
+      return matches;
+    });
+    
+    return filteredTasks.map(task => {
+      const relatedGoal = task.goal_id ? goals.find(g => g.id === task.goal_id) : null;
+      return {
+        id: task.id,
+        title: task.title,
+        description: task.description,
+        time: task.due_at ? new Date(task.due_at).toLocaleTimeString('en-US', {
+          hour: 'numeric',
+          minute: '2-digit',
+          hour12: true,
+        }) : '',
+        completed: task.completed || false,
+        goalId: task.goal_id,
+        goalTitle: relatedGoal?.title,
+        goalColor: relatedGoal?.color,
+        estimated_duration: task.duration_minutes,
+      };
+    });
+  };
+
+  const todaysDatabaseTasks = getTodaysDatabaseTasks();
+  
+  // Combine both goal-generated tasks and database tasks
+  const allTodaysTasks = [...todaysTasksFromGoals, ...todaysDatabaseTasks];
   
   const [animatedValues, setAnimatedValues] = useState<Animated.Value[]>([]);
+  const [selectedTask, setSelectedTask] = useState<any>(null);
+  const [isTaskModalVisible, setIsTaskModalVisible] = useState(false);
+  const [isViewAllTasksModalVisible, setIsViewAllTasksModalVisible] = useState(false);
 
   // Update animated values when tasks change
   useEffect(() => {
@@ -101,16 +154,15 @@ export default function HomeScreen() {
       ]).start();
     }
     
-    // Only toggle tasks that exist in the database
-    // Tasks from goal plans are generated dynamically and don't need to be toggled
+    // Check if this is a database task or goal-generated task
     const task = allTodaysTasks[index];
-    if (task && !task.goalId) {
-      // This is a database task, toggle it
+    if (task && task.goalId && tasks.find(t => t.id === taskId)) {
+      // This is a database task, toggle it using the provider
       toggleTask(taskId);
     } else {
       // This is a goal plan task, we could implement local state tracking here
       // For now, we'll just show a message that this is a goal-based task
-      console.log('Goal-based task toggled:', task.title);
+      console.log('Goal-based task toggled:', task?.title);
     }
   };
 
@@ -119,17 +171,13 @@ export default function HomeScreen() {
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
     
-    console.log(`Progress card ${index} pressed`);
     // Navigate to relevant screen based on card type
     switch(index) {
       case 0: // Tasks Complete
-        console.log('Navigating to tasks overview');
         break;
       case 1: // Day Streak
-        console.log('Showing streak details');
         break;
       case 2: // Weekly Goal
-        console.log('Showing weekly progress');
         break;
       case 3: // Goals Active
         router.push('/(tabs)/goals');
@@ -141,8 +189,35 @@ export default function HomeScreen() {
     if (Platform.OS !== "web") {
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
-    console.log('View all tasks pressed');
-    // Could navigate to a dedicated tasks screen or show modal
+    setIsViewAllTasksModalVisible(true);
+  };
+
+  const handleTaskPress = async (task: any, index: number) => {
+    if (Platform.OS !== "web") {
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+    
+    setSelectedTask(task);
+    setIsTaskModalVisible(true);
+  };
+
+  const handleCloseTaskModal = () => {
+    setIsTaskModalVisible(false);
+    setSelectedTask(null);
+  };
+
+  const handleCloseViewAllTasksModal = () => {
+    setIsViewAllTasksModalVisible(false);
+  };
+
+  const handleToggleTaskFromModal = (taskId: string) => {
+    // Find the task index and call the existing toggle handler
+    const taskIndex = allTodaysTasks.findIndex(task => task.id === taskId);
+    if (taskIndex !== -1) {
+      handleToggleTask(taskId, taskIndex);
+    }
+    // Close the modal after toggling
+    handleCloseTaskModal();
   };
 
   const handleViewAllGoals = async () => {
@@ -156,7 +231,6 @@ export default function HomeScreen() {
     if (Platform.OS !== "web") {
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
-    console.log(`Goal ${goalId} pressed`);
     router.push('/(tabs)/goals');
   };
 
@@ -210,9 +284,6 @@ export default function HomeScreen() {
   const goalProgressBarStyle = (progress: number, status: string) => ({
     width: `${progress}%`,
     height: '100%',
-    backgroundColor: status === 'active' ? colors.success : 
-                    status === 'paused' ? colors.warning : 
-                    colors.primary,
     borderRadius: 3
   });
   
@@ -562,25 +633,6 @@ export default function HomeScreen() {
       flexDirection: 'row',
       alignItems: 'center',
     },
-    priorityBadge: {
-      paddingHorizontal: 12,
-      paddingVertical: 6,
-      borderRadius: 12,
-      marginLeft: 8,
-    },
-    priorityText: {
-      fontSize: 12,
-      fontWeight: "600" as const,
-    },
-    priorityHigh: {
-      backgroundColor: `${colors.danger}20`,
-    },
-    priorityMedium: {
-      backgroundColor: `${colors.warning}20`,
-    },
-    priorityLow: {
-      backgroundColor: `${colors.success}20`,
-    },
     upcomingSection: {
       marginTop: 10,
       paddingHorizontal: 20,
@@ -597,10 +649,11 @@ export default function HomeScreen() {
       elevation: 4,
       borderWidth: isDark ? 1 : 0,
       borderColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'transparent',
+      minHeight: 100,
     },
     upcomingHeader: {
       flexDirection: 'row',
-      alignItems: 'center',
+      alignItems: 'flex-start',
       marginBottom: 16,
     },
     upcomingIcon: {
@@ -615,16 +668,19 @@ export default function HomeScreen() {
       shadowOpacity: 0.2,
       shadowRadius: 4,
       elevation: 2,
+      flexShrink: 0,
     },
     upcomingTitle: {
       fontSize: 16,
       fontWeight: "600" as const,
-
       color: colors.text,
+      lineHeight: 20,
+      marginBottom: 4,
     },
     upcomingSubtitle: {
       fontSize: 13,
       color: colors.textSecondary,
+      lineHeight: 18,
     },
     motivationalSection: {
       backgroundColor: colors.card,
@@ -809,6 +865,7 @@ export default function HomeScreen() {
           const completedTasks = completedGoalTasks;
           const totalTasks = totalGoalTasks;
           const completionRate = totalTasks > 0 ? (completedTasks / totalTasks) * 100 : 0;
+          const hasGoals = goals.length > 0;
           
           let message = "";
           let messageColor = colors.textSecondary;
@@ -825,6 +882,9 @@ export default function HomeScreen() {
           } else if (totalTasks > 0) {
             message = "🚀 Ready to tackle today's challenges?";
             messageColor = colors.text;
+          } else if (hasGoals) {
+            message = "📝 No tasks for today - enjoy your free time!";
+            messageColor = colors.textSecondary;
           } else {
             message = "✨ Create a goal to get started with your journey!";
             messageColor = colors.textSecondary;
@@ -882,7 +942,11 @@ export default function HomeScreen() {
                   {task.completed && <Check size={16} color="white" />}
                 </TouchableOpacity>
 
-                <View style={styles.taskContent}>
+                <TouchableOpacity
+                  style={styles.taskContent}
+                  onPress={() => handleTaskPress(task, index)}
+                  activeOpacity={0.7}
+                >
                   <Text
                     style={[
                       styles.taskName,
@@ -897,7 +961,7 @@ export default function HomeScreen() {
                     </Text>
                   )}
                   {task.goalTitle && (
-                    <Text style={styles.taskGoal}>
+                    <Text style={[styles.taskGoal, { color: task.goalColor || colors.primary }]}>
                       {task.goalTitle}
                     </Text>
                   )}
@@ -910,32 +974,8 @@ export default function HomeScreen() {
                       </Text>
                     )}
                   </View>
-                </View>
+                </TouchableOpacity>
 
-                <View
-                  style={[
-                    styles.priorityBadge,
-                    task.priority === "high" && styles.priorityHigh,
-                    task.priority === "medium" && styles.priorityMedium,
-                    task.priority === "low" && styles.priorityLow,
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.priorityText,
-                      {
-                        color:
-                          task.priority === "high"
-                            ? colors.danger
-                            : task.priority === "medium"
-                            ? colors.warning
-                            : colors.success,
-                      },
-                    ]}
-                  >
-                    {task.priority.charAt(0).toUpperCase() + task.priority.slice(1)}
-                  </Text>
-                </View>
               </Animated.View>
             )) : (
               <View style={styles.emptyStateContainer}>
@@ -963,26 +1003,20 @@ export default function HomeScreen() {
           {(() => {
             // Filter and sort goals for upcoming section
             const now = new Date();
-            console.log('Filtering goals - Total goals:', goals.length);
-            console.log('Current time:', now.toISOString());
             
             const upcomingGoals = goals
               .filter(goal => {
-                console.log('Checking goal:', goal.title, 'Status:', goal.status, 'Target date:', goal.target_date);
                 // Only show active goals
                 if (goal.status !== 'active') {
-                  console.log('Filtered out - not active:', goal.title);
                   return false;
                 }
                 // If no target_date, include it (ongoing goals)
                 if (!goal.target_date) {
-                  console.log('Including - no target date:', goal.title);
                   return true;
                 }
                 // Only show future goals
                 const targetDate = new Date(goal.target_date);
                 const isFuture = targetDate > now;
-                console.log('Target date:', targetDate.toISOString(), 'Is future:', isFuture);
                 return isFuture;
               })
               .sort((a, b) => {
@@ -993,12 +1027,19 @@ export default function HomeScreen() {
                 return new Date(a.target_date).getTime() - new Date(b.target_date).getTime();
               })
               .slice(0, 5); // Show next 5 goals
-
-            console.log('Upcoming goals after filtering:', upcomingGoals.length);
             return upcomingGoals.length > 0 ? upcomingGoals.map((goal, index) => (
             <TouchableOpacity 
               key={`goal-${index}`} 
-              style={styles.upcomingCard}
+              style={[
+                styles.upcomingCard,
+                {
+                  borderLeftWidth: 4,
+                  borderLeftColor: goal.color || 
+                                 (goal.status === 'active' ? colors.success : 
+                                  goal.status === 'paused' ? colors.warning : 
+                                  colors.primary)
+                }
+              ]}
               activeOpacity={0.7}
               onPress={() => handleGoalPress(goal.id)}
               testID={`upcoming-goal-${index}`}
@@ -1007,23 +1048,48 @@ export default function HomeScreen() {
                 <View 
                   style={[
                     styles.upcomingIcon, 
-                    { backgroundColor: goal.status === 'active' ? `${colors.success}15` : 
+                    { backgroundColor: goal.color ? `${goal.color}15` : 
+                                      goal.status === 'active' ? `${colors.success}15` : 
                                       goal.status === 'paused' ? `${colors.warning}15` : 
                                       `${colors.primary}15` }
                   ]}
                 >
                   <TrendingUp 
                     size={20} 
-                    color={goal.status === 'active' ? colors.success : 
-                           goal.status === 'paused' ? colors.warning : 
-                           colors.primary} 
+                    color={goal.color || 
+                           (goal.status === 'active' ? colors.success : 
+                            goal.status === 'paused' ? colors.warning : 
+                            colors.primary)} 
                   />
                 </View>
-                <View>
-                  <Text style={styles.upcomingTitle}>{goal.title}</Text>
-                  <Text style={styles.upcomingSubtitle}>{goal.description}</Text>
+                <View style={{ flex: 1, marginRight: 8 }}>
+                  <Text 
+                    style={styles.upcomingTitle}
+                    numberOfLines={2}
+                    ellipsizeMode="tail"
+                  >
+                    {goal.title}
+                  </Text>
+                  <Text 
+                    style={styles.upcomingSubtitle}
+                    numberOfLines={2}
+                    ellipsizeMode="tail"
+                  >
+                    {goal.description}
+                  </Text>
                   {goal.target_date && (
-                    <Text style={[styles.upcomingSubtitle, { color: colors.primary, marginTop: 4 }]}>
+                    <Text 
+                      style={[
+                        styles.upcomingSubtitle, 
+                        { 
+                          color: goal.color || colors.primary, 
+                          marginTop: 4,
+                          fontWeight: '600'
+                        }
+                      ]}
+                      numberOfLines={1}
+                      ellipsizeMode="tail"
+                    >
                       Due: {new Date(goal.target_date).toLocaleDateString('en-US', {
                         month: 'short',
                         day: 'numeric',
@@ -1035,7 +1101,13 @@ export default function HomeScreen() {
               </View>
               <View style={goalProgressContainerStyle}>
                 <View 
-                  style={goalProgressBarStyle(goal.progress, goal.status)}
+                  style={[
+                    goalProgressBarStyle(goal.progress, goal.status),
+                    { backgroundColor: goal.color || 
+                                     (goal.status === 'active' ? colors.success : 
+                                      goal.status === 'paused' ? colors.warning : 
+                                      colors.primary) }
+                  ]}
                 />
               </View>
             </TouchableOpacity>
@@ -1048,6 +1120,20 @@ export default function HomeScreen() {
           })()}
         </View>
       </Animated.ScrollView>
+
+      {/* Task Detail Modal */}
+      <TaskDetailModal
+        visible={isTaskModalVisible}
+        task={selectedTask}
+        onClose={handleCloseTaskModal}
+        onToggleComplete={handleToggleTaskFromModal}
+      />
+
+      {/* View All Tasks Modal */}
+      <ViewAllTasksModal
+        visible={isViewAllTasksModalVisible}
+        onClose={handleCloseViewAllTasksModal}
+      />
     </View>
   );
 }
