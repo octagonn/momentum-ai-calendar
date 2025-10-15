@@ -25,9 +25,10 @@ import { useSubscription } from "@/providers/SubscriptionProvider";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { supabase } from "@/lib/supabase-client";
 import { subscriptionService } from "@/services/subscriptionService";
+import SubscriptionManagementModal from "@/app/components/SubscriptionManagementModal";
 
 export default function SettingsScreen() {
-  const { colors, isDark, toggleTheme } = useTheme();
+  const { colors, isDark, themeMode, setThemeMode } = useTheme();
   const { user, updateUser } = useUser();
   const { signOut } = useAuth();
   const { isPremium, subscriptionTier, showUpgradeModal } = useSubscription();
@@ -39,7 +40,8 @@ export default function SettingsScreen() {
     requestPermission,
     updateSettings: updateNotificationSettings,
     updatePreferences: updateNotificationPreferences,
-    sendTestNotification
+    sendTestNotification,
+    cancelAllNotifications
   } = useNotifications();
   
   const [taskReminderMinutes, setTaskReminderMinutes] = useState(notificationPreferences.taskReminderMinutes);
@@ -53,6 +55,7 @@ export default function SettingsScreen() {
   const [privacyModalVisible, setPrivacyModalVisible] = useState<boolean>(false);
   const [termsModalVisible, setTermsModalVisible] = useState<boolean>(false);
   const [changePasswordModalVisible, setChangePasswordModalVisible] = useState<boolean>(false);
+  const [subscriptionModalVisible, setSubscriptionModalVisible] = useState<boolean>(false);
   const [currentPassword, setCurrentPassword] = useState<string>('');
   const [newPassword, setNewPassword] = useState<string>('');
   const [confirmPassword, setConfirmPassword] = useState<string>('');
@@ -86,7 +89,7 @@ export default function SettingsScreen() {
     if (Platform.OS !== "web") {
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
-    await subscriptionService.cancelSubscription();
+    setSubscriptionModalVisible(true);
   };
 
   const handleChangePassword = async () => {
@@ -494,6 +497,30 @@ export default function SettingsScreen() {
       fontStyle: 'italic',
       marginBottom: 16,
     },
+    themeOptions: {
+      flexDirection: 'row',
+      gap: 8,
+      marginTop: 12,
+    },
+    themeOption: {
+      flex: 1,
+      paddingVertical: 10,
+      paddingHorizontal: 12,
+      borderRadius: 12,
+      borderWidth: 2,
+      borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)',
+      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.02)',
+      alignItems: 'center',
+    },
+    themeOptionActive: {
+      borderWidth: 2,
+      backgroundColor: isDark ? 'rgba(99, 102, 241, 0.1)' : 'rgba(99, 102, 241, 0.05)',
+    },
+    themeOptionText: {
+      fontSize: 14,
+      fontWeight: '600' as const,
+      fontFamily: 'Inter_600SemiBold',
+    },
   });
 
   const features = [
@@ -733,19 +760,72 @@ export default function SettingsScreen() {
           <Text style={styles.sectionTitle}>Appearance</Text>
           
           <View style={[styles.settingItem, styles.settingItemLast]}>
-            <View style={styles.settingRow}>
-              <View style={styles.settingInfo}>
-                <Text style={styles.settingLabel}>Dark Mode</Text>
-                <Text style={styles.settingDescription}>
-                  Switch between light and dark themes
+            <View style={styles.settingInfo}>
+              <Text style={styles.settingLabel}>Theme</Text>
+              <Text style={styles.settingDescription}>
+                Choose your preferred appearance
+              </Text>
+            </View>
+            <View style={styles.themeOptions}>
+              <TouchableOpacity
+                style={[
+                  styles.themeOption,
+                  themeMode === 'light' && [styles.themeOptionActive, { borderColor: colors.primary }]
+                ]}
+                onPress={async () => {
+                  if (Platform.OS !== "web") {
+                    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  }
+                  setThemeMode('light');
+                }}
+              >
+                <Text style={[
+                  styles.themeOptionText,
+                  { color: themeMode === 'light' ? colors.primary : colors.text }
+                ]}>
+                  ☀️ Light
                 </Text>
-              </View>
-              <Switch
-                value={isDark}
-                onValueChange={() => handleToggle("theme", !isDark)}
-                trackColor={{ false: colors.border, true: colors.primary }}
-                thumbColor={isDark ? "white" : "#f4f3f4"}
-              />
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={[
+                  styles.themeOption,
+                  themeMode === 'dark' && [styles.themeOptionActive, { borderColor: colors.primary }]
+                ]}
+                onPress={async () => {
+                  if (Platform.OS !== "web") {
+                    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  }
+                  setThemeMode('dark');
+                }}
+              >
+                <Text style={[
+                  styles.themeOptionText,
+                  { color: themeMode === 'dark' ? colors.primary : colors.text }
+                ]}>
+                  🌙 Dark
+                </Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={[
+                  styles.themeOption,
+                  themeMode === 'system' && [styles.themeOptionActive, { borderColor: colors.primary }]
+                ]}
+                onPress={async () => {
+                  if (Platform.OS !== "web") {
+                    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  }
+                  setThemeMode('system');
+                }}
+              >
+                <Text style={[
+                  styles.themeOptionText,
+                  { color: themeMode === 'system' ? colors.primary : colors.text }
+                ]}>
+                  📱 System
+                </Text>
+              </TouchableOpacity>
             </View>
           </View>
         </View>
@@ -832,7 +912,7 @@ export default function SettingsScreen() {
             </View>
           )}
           
-          <View style={styles.settingItem}>
+          <View style={[styles.settingItem, styles.settingItemLast]}>
             <View style={styles.settingRow}>
               <View style={styles.settingInfo}>
                 <Text style={styles.settingLabel}>Smart Goal Reminders</Text>
@@ -849,53 +929,6 @@ export default function SettingsScreen() {
               />
             </View>
           </View>
-          
-          
-          
-          {hasPermission && (
-            <>
-              <View style={styles.settingItem}>
-                <View style={styles.settingRow}>
-                  <View style={styles.settingInfo}>
-                    <Text style={styles.settingLabel}>Test Notifications</Text>
-                    <Text style={styles.settingDescription}>
-                      Send a test notification to verify settings
-                    </Text>
-                  </View>
-                  <TouchableOpacity 
-                    style={styles.actionButton} 
-                    activeOpacity={0.7}
-                    onPress={sendTestNotification}
-                    testID="test-notification-button"
-                  >
-                    <Text style={styles.actionButtonText}>Test</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-              
-              <View style={[styles.settingItem, styles.settingItemLast]}>
-                <View style={styles.settingRow}>
-                  <View style={styles.settingInfo}>
-                    <Text style={styles.settingLabel}>Clear & Reschedule</Text>
-                    <Text style={styles.settingDescription}>
-                      Clear all notifications and reschedule them
-                    </Text>
-                  </View>
-                  <TouchableOpacity 
-                    style={[styles.actionButton, { backgroundColor: colors.warning }]} 
-                    activeOpacity={0.7}
-                    onPress={async () => {
-                      await notificationService.cancelAllNotifications();
-                      Alert.alert('Notifications Cleared', 'All notifications have been cleared and will be rescheduled automatically.');
-                    }}
-                    testID="clear-notifications-button"
-                  >
-                    <Text style={[styles.actionButtonText, { color: 'white' }]}>Clear</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            </>
-          )}
         </View>
 
         <View style={styles.section}>
@@ -1245,6 +1278,12 @@ export default function SettingsScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Subscription Management Modal */}
+      <SubscriptionManagementModal
+        visible={subscriptionModalVisible}
+        onClose={() => setSubscriptionModalVisible(false)}
+      />
     </View>
   );
 }

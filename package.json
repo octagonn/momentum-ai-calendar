@@ -43,7 +43,12 @@
     "test-goal-ui": "node scripts/test-goal-creation-ui.js test",
     "rork:start": "bunx rork start -p mswedc5vdvloppy2wy514 --tunnel",
     "rork:web": "bunx rork start -p mswedc5vdvloppy2wy514 --web --tunnel",
-    "rork:dev": "DEBUG=expo* bunx rork start -p mswedc5vdvloppy2wy514 --web --tunnel"
+    "rork:dev": "DEBUG=expo* bunx rork start -p mswedc5vdvloppy2wy514 --web --tunnel",
+    "eas:login": "eas login",
+    "eas:build:preview": "eas build --platform ios --profile preview",
+    "eas:build:production": "eas build --platform ios --profile production",
+    "eas:submit": "eas submit --platform ios",
+    "eas:build:list": "eas build:list"
   },
   "dependencies": {
     "@expo-google-fonts/inter": "^0.4.2",

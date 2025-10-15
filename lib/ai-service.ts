@@ -88,13 +88,15 @@ class AIService {
 
           Information you need to gather (ask ONE at a time):
           - What is their specific goal?
-          - When do they want to achieve it?
+          - When do they want to achieve it? **CRITICAL: If they give a vague timeframe like "end of term", "end of semester", "end of year", you MUST ask for a specific date (e.g., "When specifically does your term end? Please provide a date like December 15th")**
           - How much time can they commit per week?
           - What days work best for them? (Be very specific - ask for exact days like "Tuesdays, Thursdays, Saturdays" or "weekdays")
           - What time of day works best?
           - Any specific preferences or constraints?
 
           **IMPORTANT: When asking about days, be very specific. Ask for exact days of the week (e.g., "What days of the week work best for you? For example, Tuesdays and Thursdays, or weekdays, or weekends?"). This is crucial for proper scheduling.**
+
+          **CRITICAL DATE RULE: If a user says "end of term", "end of semester", "end of the year", or any vague timeframe, you MUST ask them for a specific date. Say something like "When specifically does your term end? Please provide a date like December 15th or January 30th."**
 
           **REMEMBER: Always ask only ONE question per response. Never combine questions like "What is your goal and when do you want to achieve it?" - instead ask "What is your goal?" first, then in the next response ask about timing.**`;
 
@@ -424,13 +426,43 @@ FITNESS/WEIGHTLIFTING SPECIFIC RULES:
 - Focus on rep ranges and intensity percentages, not specific weights
 - This applies to all strength training, powerlifting, bodybuilding, etc.
 
-SCHEDULING RULES:
-- ONLY schedule tasks on the days the user specified in their conversation
-- If user said "Tuesdays, Thursdays, Saturdays" - ONLY use those days
-- If user said "weekdays" - use Monday-Friday
-- If user said "weekends" - use Saturday-Sunday
-- NEVER add extra days beyond what the user requested
-- Respect the user's preferred schedule exactly`;
+SCHEDULING RULES - CRITICAL FOR ACCURACY:
+- ONLY schedule tasks on the EXACT days the user specified in their conversation
+- You must carefully parse the user's day preferences from the conversation history
+
+DAY PARSING RULES:
+1. If user said "weekdays", "monday-friday", "monday through friday", "mon-fri":
+   → Schedule ONLY on: Monday, Tuesday, Wednesday, Thursday, Friday
+   → Day numbers: 1, 2, 3, 4, 5 (where 0=Sunday, 6=Saturday)
+   → NEVER include Saturday (6) or Sunday (0)
+
+2. If user said "weekends":
+   → Schedule ONLY on: Saturday, Sunday
+   → Day numbers: 6, 0
+   → NEVER include Monday-Friday (1-5)
+
+3. If user said specific days like "Tuesdays, Thursdays, Saturdays":
+   → Schedule ONLY on those specific days mentioned
+   → Parse each day name and use ONLY those days
+
+4. If user said "Monday, Wednesday" or similar:
+   → Schedule ONLY on those specific days
+   → Do NOT add any other days
+
+CRITICAL VALIDATION:
+- After generating the schedule, verify that ALL scheduled task dates fall ONLY on the user's requested days
+- If the user said "monday-friday", verify NO tasks are scheduled on Saturday or Sunday
+- If the user said "weekends", verify NO tasks are scheduled on Monday-Friday
+- Count tasks per day of week and ensure only requested days have tasks
+
+EXAMPLE VALIDATION:
+User said: "monday-friday"
+✓ CORRECT: Tasks scheduled on Mon, Tue, Wed, Thu, Fri
+✗ WRONG: Tasks scheduled on Sat, Sun, Mon, Tue, Wed (includes weekend days!)
+
+User said: "Tuesday, Thursday"
+✓ CORRECT: Tasks scheduled only on Tuesdays and Thursdays
+✗ WRONG: Tasks scheduled on Mon, Tue, Thu, Fri (includes extra days!)`;
 
       const conversationText = conversationHistory.map(msg => `${msg.role}: ${msg.content}`).join('\n');
       
@@ -459,6 +491,68 @@ SCHEDULING RULES:
       // Validate the structure
       if (!planData.goal || !planData.tasks || !Array.isArray(planData.tasks)) {
         throw new Error('Invalid plan structure returned by AI');
+      }
+
+      // Extract user's requested days from conversation
+      // Import validation utilities
+      const dayParserModule = await import('./ai/dayParser');
+      const schedulerModule = await import('./ai/scheduler');
+      
+      let userRequestedDays: any[] = [];
+      
+      // Search conversation for day preferences
+      for (const msg of conversationHistory) {
+        const content = msg.content.toLowerCase();
+        
+        // Look for day-related keywords
+        if (
+          content.includes('weekday') ||
+          content.includes('monday') ||
+          content.includes('tuesday') ||
+          content.includes('wednesday') ||
+          content.includes('thursday') ||
+          content.includes('friday') ||
+          content.includes('saturday') ||
+          content.includes('sunday') ||
+          content.includes('weekend') ||
+          content.includes('mon-fri') ||
+          content.includes('mon - fri')
+        ) {
+          try {
+            const parsedDays = dayParserModule.parseDayExpression(msg.content);
+            if (parsedDays.length > 0) {
+              userRequestedDays = parsedDays;
+              console.log(`📅 Detected user requested days: ${parsedDays.join(', ')}`);
+              break;
+            }
+          } catch (e) {
+            // Continue searching
+          }
+        }
+      }
+      
+      // Validate scheduled tasks match requested days
+      if (userRequestedDays.length > 0 && planData.tasks.length > 0) {
+        const validation = schedulerModule.validateTaskDays(planData.tasks, userRequestedDays);
+        
+        if (!validation.isValid) {
+          console.error('❌ SCHEDULING VALIDATION FAILED:');
+          console.error(`   User requested: ${validation.summary.allowedDaysFormatted}`);
+          console.error(`   Total tasks: ${validation.summary.totalTasks}`);
+          console.error(`   Valid tasks: ${validation.summary.validTasks}`);
+          console.error(`   Invalid tasks: ${validation.summary.invalidTasks}`);
+          console.error('   Violations:');
+          validation.violations.forEach(v => {
+            console.error(`   - Task "${v.taskTitle}" scheduled on ${v.scheduledDay} (${v.scheduledDayNumber})`);
+          });
+          
+          // Log warning but don't fail - let user see the issue
+          console.warn('⚠️ Proceeding with tasks despite scheduling violations. User can manually adjust.');
+        } else {
+          console.log('✅ All tasks scheduled correctly on requested days');
+          console.log(`   Requested days: ${validation.summary.allowedDaysFormatted}`);
+          console.log(`   All ${validation.summary.totalTasks} tasks validated`);
+        }
       }
 
       return { success: true, goal: planData.goal, tasks: planData.tasks };

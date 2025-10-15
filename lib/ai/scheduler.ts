@@ -1,8 +1,6 @@
 import { addDays, format, parseISO, startOfDay, addMinutes } from 'date-fns';
 import { InterviewFields, ScheduledSlot } from './planSchema';
-
-const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-const DAY_NAMES_FULL = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+import { DAY_NAMES, DAY_NAMES_FULL, dayNamesToNumbers, DayOfWeek, parseDayExpression } from './dayParser';
 
 export function buildSchedule(fields: InterviewFields): ScheduledSlot[] {
   const { target_date, days_per_week, session_minutes, preferred_days, time_of_day } = fields;
@@ -44,33 +42,21 @@ function getAvailableDates(
   const availableDates: Date[] = [];
   const currentDate = new Date(startDate);
   
-  // Convert preferred days to day numbers (0 = Sunday, 1 = Monday, etc.)
-  const preferredDayNumbers = preferredDays.map(day => {
-    const dayIndex = DAY_NAMES.findIndex(d => d.toLowerCase() === day.toLowerCase());
-    if (dayIndex !== -1) return dayIndex;
-    
-    const fullDayIndex = DAY_NAMES_FULL.findIndex(d => d.toLowerCase() === day.toLowerCase());
-    if (fullDayIndex !== -1) return fullDayIndex;
-    
-    // Handle partial matches
-    for (let i = 0; i < DAY_NAMES.length; i++) {
-      if (DAY_NAMES[i].toLowerCase().startsWith(day.toLowerCase()) || 
-          DAY_NAMES_FULL[i].toLowerCase().startsWith(day.toLowerCase())) {
-        return i;
-      }
-    }
-    
-    return -1;
-  }).filter(num => num !== -1);
+  // Use centralized day parser to convert day names to numbers
+  // This ensures consistent interpretation across the entire app
+  const preferredDayNumbers = dayNamesToNumbers(preferredDays as DayOfWeek[]);
   
   if (preferredDayNumbers.length === 0) {
-    // Fallback to all days if no valid days found
+    console.warn('No valid preferred days found, defaulting to weekdays (Mon-Fri)');
+    // Fallback to weekdays if no valid days found
     preferredDayNumbers.push(1, 2, 3, 4, 5); // Monday to Friday
   }
   
+  // Iterate through dates and only include those on preferred days
   while (currentDate <= endDate) {
     const dayOfWeek = currentDate.getDay();
     
+    // CRITICAL: Only add dates that match the user's requested days
     if (preferredDayNumbers.includes(dayOfWeek)) {
       availableDates.push(new Date(currentDate));
     }
@@ -140,6 +126,68 @@ export function validateSchedule(scheduledSlots: ScheduledSlot[]): { isValid: bo
   }
   
   return { isValid: errors.length === 0, errors };
+}
+
+/**
+ * Validate that all tasks are scheduled only on the allowed days
+ * @param tasks Array of tasks with due_at timestamps
+ * @param allowedDays Array of allowed day names (e.g., ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'])
+ * @returns Validation result with details about any scheduling violations
+ */
+export function validateTaskDays(
+  tasks: Array<{ due_at: string; title?: string }>,
+  allowedDays: DayOfWeek[]
+): {
+  isValid: boolean;
+  violations: Array<{
+    taskTitle: string;
+    scheduledDay: string;
+    scheduledDayNumber: number;
+    timestamp: string;
+  }>;
+  summary: {
+    totalTasks: number;
+    validTasks: number;
+    invalidTasks: number;
+    allowedDaysFormatted: string;
+  };
+} {
+  const violations: Array<{
+    taskTitle: string;
+    scheduledDay: string;
+    scheduledDayNumber: number;
+    timestamp: string;
+  }> = [];
+  
+  const allowedDayNumbers = dayNamesToNumbers(allowedDays);
+  
+  for (const task of tasks) {
+    const dueAt = parseISO(task.due_at);
+    const dayOfWeek = dueAt.getDay();
+    
+    if (!allowedDayNumbers.includes(dayOfWeek)) {
+      violations.push({
+        taskTitle: task.title || 'Untitled task',
+        scheduledDay: DAY_NAMES_FULL[dayOfWeek],
+        scheduledDayNumber: dayOfWeek,
+        timestamp: task.due_at,
+      });
+    }
+  }
+  
+  return {
+    isValid: violations.length === 0,
+    violations,
+    summary: {
+      totalTasks: tasks.length,
+      validTasks: tasks.length - violations.length,
+      invalidTasks: violations.length,
+      allowedDaysFormatted: allowedDays.map((d, i) => {
+        const idx = DAY_NAMES.indexOf(d);
+        return DAY_NAMES_FULL[idx];
+      }).join(', '),
+    },
+  };
 }
 
 export function formatScheduleForDisplay(scheduledSlots: ScheduledSlot[]): string {

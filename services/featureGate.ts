@@ -33,6 +33,7 @@ class FeatureGateService {
   private userTier: SubscriptionTier = 'free';
   private cachedGoalCount: number | null = null;
   private lastGoalCountCheck: Date | null = null;
+  private mockPremiumOverride: boolean = false; // For testing when DB migration is missing
   
   // Feature configuration
   private readonly featureConfig: Record<Feature, FeatureConfig> = {
@@ -145,6 +146,23 @@ class FeatureGateService {
     }
   }
 
+  // Method to set mock premium status for testing
+  setMockPremiumOverride(isPremium: boolean): void {
+    this.mockPremiumOverride = isPremium;
+    if (isPremium) {
+      this.userTier = 'premium';
+      console.log('FeatureGate: Mock premium override activated');
+    } else {
+      this.userTier = 'free';
+      console.log('FeatureGate: Mock premium override deactivated');
+    }
+  }
+
+  // Get current premium status (including mock override)
+  getCurrentTier(): SubscriptionTier {
+    return this.mockPremiumOverride ? 'premium' : this.userTier;
+  }
+
   async canAccessFeature(feature: Feature, userId?: string): Promise<{ 
     hasAccess: boolean; 
     reason?: string;
@@ -158,14 +176,15 @@ class FeatureGateService {
       return { hasAccess: true, requiresUpgrade: false };
     }
 
-    // Check if user's tier has access
-    const hasBasicAccess = config.requiredTiers.includes(this.userTier);
+    // Use current tier (which includes mock override)
+    const currentTier = this.getCurrentTier();
+    const hasBasicAccess = config.requiredTiers.includes(currentTier);
     
     // For features with limits, check the limit
     if (feature === Feature.BASIC_GOAL_CREATION && config.limit) {
       const goalCount = await this.getUserGoalCount(userId);
       
-      if (this.userTier === 'free' && goalCount >= config.limit) {
+      if (currentTier === 'free' && goalCount >= config.limit) {
         return {
           hasAccess: false,
           reason: `Free users are limited to ${config.limit} active goals.`,

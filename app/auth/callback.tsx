@@ -1,29 +1,67 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { supabase } from '@/lib/supabase-client';
+import * as Linking from 'expo-linking';
 
 export default function AuthCallback() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
+  const params = useLocalSearchParams();
 
   useEffect(() => {
     const handleAuthCallback = async () => {
       try {
-        const { data, error } = await supabase.auth.getSession();
+        // Get URL parameters - they might come from deep link or route params
+        const access_token = params.access_token as string;
+        const refresh_token = params.refresh_token as string;
+        const type = params.type as string;
+        const error_description = params.error_description as string;
         
-        if (error) {
-          console.error('Auth callback error:', error);
-          setError(error.message);
-        } else if (data.session) {
-          // User is authenticated, redirect to main app
-          router.replace('/(tabs)/home');
+        // Check if there's an error in the URL
+        if (error_description) {
+          console.error('Auth error from URL:', error_description);
+          setError(error_description);
+          setLoading(false);
+          return;
+        }
+
+        // If we have tokens in the URL, set the session
+        if (access_token && refresh_token) {
+          console.log('Setting session from URL tokens');
+          const { data, error: sessionError } = await supabase.auth.setSession({
+            access_token,
+            refresh_token,
+          });
+
+          if (sessionError) {
+            console.error('Error setting session:', sessionError);
+            setError(sessionError.message);
+          } else if (data.session) {
+            console.log('Session set successfully, user:', data.session.user?.email);
+            // Small delay to ensure session is persisted
+            await new Promise(resolve => setTimeout(resolve, 500));
+            router.replace('/(tabs)/(home)/home');
+          } else {
+            setError('Failed to create session');
+          }
         } else {
-          setError('No session found');
+          // No tokens in URL, check if we already have a session
+          const { data, error: sessionError } = await supabase.auth.getSession();
+          
+          if (sessionError) {
+            console.error('Auth callback error:', sessionError);
+            setError(sessionError.message);
+          } else if (data.session) {
+            console.log('Existing session found, user:', data.session.user?.email);
+            router.replace('/(tabs)/(home)/home');
+          } else {
+            setError('No session found. Please sign in again.');
+          }
         }
       } catch (err) {
-        console.error('Unexpected error:', err);
+        console.error('Unexpected error in auth callback:', err);
         setError('An unexpected error occurred');
       } finally {
         setLoading(false);
@@ -31,7 +69,7 @@ export default function AuthCallback() {
     };
 
     handleAuthCallback();
-  }, [router]);
+  }, [router, params]);
 
   if (loading) {
     return (

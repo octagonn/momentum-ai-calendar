@@ -1,6 +1,7 @@
 import { format, parseISO, isValid, addDays, differenceInDays } from 'date-fns';
 import { zonedTimeToUtc, utcToZonedTime } from 'date-fns-tz';
 import { InterviewFields, InterviewFieldsZ } from './planSchema';
+import { parseDayExpression, validateDayExpression, formatDaysForDisplay, DayOfWeek } from './dayParser';
 
 export interface InterviewState {
   fields: Partial<InterviewFields>;
@@ -160,31 +161,17 @@ export class InterviewEngine {
   }
 
   private validatePreferredDays(answer: string): { success: boolean; value?: string[]; error?: string } {
-    const dayMap: { [key: string]: string } = {
-      'monday': 'Mon', 'mon': 'Mon',
-      'tuesday': 'Tue', 'tue': 'Tue', 'tues': 'Tue',
-      'wednesday': 'Wed', 'wed': 'Wed',
-      'thursday': 'Thu', 'thu': 'Thu', 'thurs': 'Thu',
-      'friday': 'Fri', 'fri': 'Fri',
-      'saturday': 'Sat', 'sat': 'Sat',
-      'sunday': 'Sun', 'sun': 'Sun'
-    };
-
-    const days = answer.split(/[,\s]+/).map(d => d.trim().toLowerCase()).filter(Boolean);
-    const validDays: string[] = [];
-
-    for (const day of days) {
-      const mapped = dayMap[day];
-      if (mapped && !validDays.includes(mapped)) {
-        validDays.push(mapped);
-      }
+    // Use centralized day parser to handle all day expressions
+    const validation = validateDayExpression(answer);
+    
+    if (!validation.isValid) {
+      return { 
+        success: false, 
+        error: validation.error || "Please specify valid days (e.g., 'weekdays', 'Mon-Fri', or 'Monday,Wednesday,Friday')" 
+      };
     }
 
-    if (validDays.length === 0) {
-      return { success: false, error: "Please specify valid days (e.g., 'Mon,Wed,Fri' or 'Monday,Wednesday,Friday')" };
-    }
-
-    return { success: true, value: validDays };
+    return { success: true, value: validation.days };
   }
 
   private validateTimeOfDay(answer: string): { success: boolean; value?: string; error?: string } {

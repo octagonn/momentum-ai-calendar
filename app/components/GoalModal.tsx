@@ -14,7 +14,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../providers/ThemeProvider';
 import { useAuth } from '../../providers/AuthProvider';
 import { supabase } from '../../lib/supabase-client';
-import GoalEditModal from './GoalEditModal';
+// GoalEditModal is now rendered at a higher level to avoid nested modals
 import TaskEditModal from './TaskEditModal';
 
 interface Task {
@@ -48,16 +48,17 @@ interface GoalModalProps {
   onTaskToggle: (taskId: string, completed: boolean) => void;
   onGoalUpdated?: (updatedGoal: Goal) => void;
   onGoalDeleted?: (goalId: string) => void;
+  onEditGoal?: (goal: Goal) => void; // open edit at top-level
 }
 
-export default function GoalModal({ visible, goal, onClose, onTaskToggle, onGoalUpdated, onGoalDeleted }: GoalModalProps) {
+export default function GoalModal({ visible, goal, onClose, onTaskToggle, onGoalUpdated, onGoalDeleted, onEditGoal }: GoalModalProps) {
   const { colors, isDark } = useTheme();
   const { user } = useAuth();
   const insets = useSafeAreaInsets();
   
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(false);
-  const [showGoalEditModal, setShowGoalEditModal] = useState(false);
+  // Edit modal moved to parent to prevent nested native Modal stacking
   const [showTaskEditModal, setShowTaskEditModal] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [currentGoal, setCurrentGoal] = useState<Goal | null>(goal);
@@ -327,7 +328,9 @@ export default function GoalModal({ visible, goal, onClose, onTaskToggle, onGoal
           <View style={styles.headerActions}>
             <TouchableOpacity 
               style={styles.editButton}
-              onPress={() => setShowGoalEditModal(true)}
+              onPress={() => {
+                if (onEditGoal && currentGoal) onEditGoal(currentGoal);
+              }}
             >
               <Edit3 size={20} color={colors.primary} />
             </TouchableOpacity>
@@ -415,14 +418,7 @@ export default function GoalModal({ visible, goal, onClose, onTaskToggle, onGoal
         </ScrollView>
       </View>
 
-      {/* Edit Modals */}
-      <GoalEditModal
-        visible={showGoalEditModal}
-        goal={currentGoal}
-        onClose={() => setShowGoalEditModal(false)}
-        onGoalUpdated={handleGoalUpdated}
-        onGoalDeleted={handleGoalDeleted}
-      />
+      {/* Edit Modals moved to parent to avoid nested modal stacking */}
 
       <TaskEditModal
         visible={showTaskEditModal}

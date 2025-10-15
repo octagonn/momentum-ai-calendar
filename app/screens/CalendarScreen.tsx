@@ -11,6 +11,8 @@ import {
   Animated,
   Dimensions,
   AppState,
+  Easing,
+  Platform,
 } from 'react-native';
 import { PanGestureHandler, State } from 'react-native-gesture-handler';
 import { ChevronDown, ChevronLeft, ChevronRight, Calendar as CalendarIcon, Clock, CheckCircle, Circle } from 'lucide-react-native';
@@ -79,6 +81,18 @@ export default function CalendarScreen() {
   const monthTranslateX = useRef(new Animated.Value(0)).current;
   const [isMonthAnimating, setIsMonthAnimating] = useState(false);
   const [isMonthGestureActive, setIsMonthGestureActive] = useState(false);
+  
+  // Device-adaptive gesture thresholds
+  const swipeThreshold = useRef(screenWidth * 0.20).current; // 20% of screen - more sensitive
+  const velocityThreshold = useRef(Platform.OS === 'android' ? 400 : 500).current; // Lower for Android
+  
+  // Higher resistance for high refresh rate displays (ProMotion, 90Hz, 120Hz)
+  // These displays fire gesture events 2x faster, so we need more dampening
+  const gestureResistance = useRef(0.70).current; // Increased dampening for ProMotion
+  
+  // Throttle gesture updates for smoother tracking on high refresh rate displays
+  const lastGestureUpdate = useRef(0);
+  const gestureThrottleMs = useRef(8).current; // ~8ms = target 120 updates/sec max
 
   // Reset month view when currentDate changes
   useEffect(() => {
@@ -460,21 +474,23 @@ export default function CalendarScreen() {
     
     const currentTranslation = monthTranslateX._value;
     const remainingDistance = screenWidth - currentTranslation;
-    const duration = Math.max(600, (remainingDistance / screenWidth) * 800);
+    const duration = Math.min(250, (remainingDistance / screenWidth) * 250);
     
     
     Animated.timing(monthTranslateX, {
       toValue: screenWidth,
       duration: duration,
+      easing: Easing.out(Easing.cubic),
       useNativeDriver: true,
     }).start(() => {
+      // Reset position immediately before updating date for seamless transition
+      monthTranslateX.setValue(0);
+      
       // Update the date
       const newDate = new Date(currentDate);
       newDate.setMonth(newDate.getMonth() - 1);
       setCurrentDate(newDate);
       
-      // Reset position immediately
-      monthTranslateX.setValue(0);
       setIsMonthAnimating(false);
     });
   };
@@ -486,21 +502,23 @@ export default function CalendarScreen() {
     
     const currentTranslation = monthTranslateX._value;
     const remainingDistance = screenWidth + currentTranslation;
-    const duration = Math.max(600, (remainingDistance / screenWidth) * 800);
+    const duration = Math.min(250, (remainingDistance / screenWidth) * 250);
     
     
     Animated.timing(monthTranslateX, {
       toValue: -screenWidth,
       duration: duration,
+      easing: Easing.out(Easing.cubic),
       useNativeDriver: true,
     }).start(() => {
+      // Reset position immediately before updating date for seamless transition
+      monthTranslateX.setValue(0);
+      
       // Update the date
       const newDate = new Date(currentDate);
       newDate.setMonth(newDate.getMonth() + 1);
       setCurrentDate(newDate);
       
-      // Reset position immediately
-      monthTranslateX.setValue(0);
       setIsMonthAnimating(false);
     });
   };
@@ -515,15 +533,19 @@ export default function CalendarScreen() {
     // Get current position and continue sliding to the right
     const currentTranslation = translateX._value;
     const remainingDistance = screenWidth - currentTranslation;
-    const duration = Math.max(800, (remainingDistance / screenWidth) * 1200);
+    const duration = Math.min(250, (remainingDistance / screenWidth) * 250);
     
     
     // Continue sliding from current position to complete the transition
     Animated.timing(translateX, {
       toValue: screenWidth,
       duration: duration,
+      easing: Easing.out(Easing.cubic),
       useNativeDriver: true,
     }).start(() => {
+      // Reset position immediately for seamless transition
+      translateX.setValue(0);
+      
       // Update the date
       const newDate = new Date(currentDate);
       if (showMonthView) {
@@ -567,15 +589,19 @@ export default function CalendarScreen() {
     // Get current position and continue sliding to the left
     const currentTranslation = translateX._value;
     const remainingDistance = screenWidth + currentTranslation;
-    const duration = Math.max(800, (remainingDistance / screenWidth) * 1200);
+    const duration = Math.min(250, (remainingDistance / screenWidth) * 250);
     
     
     // Continue sliding from current position to complete the transition
     Animated.timing(translateX, {
       toValue: -screenWidth,
       duration: duration,
+      easing: Easing.out(Easing.cubic),
       useNativeDriver: true,
     }).start(() => {
+      // Reset position immediately for seamless transition
+      translateX.setValue(0);
+      
       // Update the date
       const newDate = new Date(currentDate);
       if (showMonthView) {
@@ -609,13 +635,25 @@ export default function CalendarScreen() {
     });
   };
 
-  // Handle swipe gesture - follow finger in real-time
+  // Handle swipe gesture - follow finger in real-time with resistance
   const onGestureEvent = (event: any) => {
     if (isGestureActive && !isAnimating) {
+      const now = Date.now();
+      
+      // Throttle updates for high refresh rate displays (120Hz)
+      // This prevents oversensitivity on ProMotion displays
+      if (now - lastGestureUpdate.current < gestureThrottleMs) {
+        return;
+      }
+      lastGestureUpdate.current = now;
+      
       const { translationX } = event.nativeEvent;
       
-      // Show next week when swiping starts
-      if (Math.abs(translationX) > 20 && !showNextWeek) {
+      // Apply increased resistance for better control on high refresh rate displays
+      const resistedTranslation = translationX * gestureResistance;
+      
+      // Show next week when swiping starts (lower threshold for better responsiveness)
+      if (Math.abs(translationX) > 15 && !showNextWeek) {
         if (translationX > 0) {
           // Swiping right - show previous week
           const newDate = new Date(currentDate);
@@ -632,8 +670,8 @@ export default function CalendarScreen() {
         setShowNextWeek(true);
       }
       
-      // Directly set the translation value to follow finger
-      translateX.setValue(translationX);
+      // Set the translation value with resistance for smoother tracking
+      translateX.setValue(resistedTranslation);
     }
   };
 
@@ -641,9 +679,10 @@ export default function CalendarScreen() {
     const { state, translationX, velocityX, x } = event.nativeEvent;
     
     if (state === State.BEGAN) {
-      // Gesture started - record starting position
+      // Gesture started - record starting position and reset throttle
       setGestureStartX(x);
       setIsGestureActive(true);
+      lastGestureUpdate.current = 0; // Reset throttle timer
       translateX.setValue(0);
       setShowNextWeek(false);
       setSwipeDirection(null);
@@ -654,25 +693,37 @@ export default function CalendarScreen() {
       // Finger lifted - decide whether to complete the swipe or snap back
       setIsGestureActive(false);
       
-      const swipeThreshold = screenWidth * 0.25;
-      const velocityThreshold = 500;
+      // Apply resistance to thresholds for consistent behavior across all refresh rates
+      const adjustedTranslation = translationX * gestureResistance;
+      const absVelocity = Math.abs(velocityX);
       
+      // On high refresh rate displays, velocity is often amplified
+      // Scale it down slightly for more consistent behavior
+      const normalizedVelocityX = velocityX * 0.90;
       
-      if (translationX > swipeThreshold || velocityX > velocityThreshold) {
+      // Combined threshold check: distance OR velocity
+      const shouldSwipeRight = adjustedTranslation > swipeThreshold || 
+                              (normalizedVelocityX > velocityThreshold && translationX > 0);
+      const shouldSwipeLeft = adjustedTranslation < -swipeThreshold || 
+                             (normalizedVelocityX < -velocityThreshold && translationX < 0);
+      
+      if (shouldSwipeRight) {
         // Swipe right - go to previous week
         goToPreviousWeek();
-      } else if (translationX < -swipeThreshold || velocityX < -velocityThreshold) {
+      } else if (shouldSwipeLeft) {
         // Swipe left - go to next week
         goToNextWeek();
       } else {
-        // Snap back to original position
+        // Snap back to original position with adaptive spring
         setShowNextWeek(false);
         setSwipeDirection(null);
         Animated.spring(translateX, {
           toValue: 0,
           useNativeDriver: true,
-          tension: 100,
-          friction: 8,
+          speed: 18,
+          bounciness: 6,
+          restDisplacementThreshold: 0.01,
+          restSpeedThreshold: 0.01,
         }).start();
       }
     }
@@ -694,12 +745,21 @@ export default function CalendarScreen() {
     return weekDates;
   };
 
-  // Month view gesture handlers
+  // Month view gesture handlers with resistance and throttling
   const onMonthGestureEvent = (event: any) => {
     if (isMonthGestureActive && !isMonthAnimating) {
+      const now = Date.now();
+      
+      // Throttle updates for high refresh rate displays
+      if (now - lastGestureUpdate.current < gestureThrottleMs) {
+        return;
+      }
+      lastGestureUpdate.current = now;
+      
       const { translationX } = event.nativeEvent;
-      // Clamp the translation to prevent extreme values
-      const clampedTranslation = Math.max(-screenWidth * 1.5, Math.min(screenWidth * 1.5, translationX));
+      // Apply increased resistance and clamp for smoother tracking on ProMotion
+      const resistedTranslation = translationX * gestureResistance;
+      const clampedTranslation = Math.max(-screenWidth * 1.2, Math.min(screenWidth * 1.2, resistedTranslation));
       monthTranslateX.setValue(clampedTranslation);
     }
   };
@@ -709,6 +769,7 @@ export default function CalendarScreen() {
     
     if (state === State.BEGAN) {
       setIsMonthGestureActive(true);
+      lastGestureUpdate.current = 0; // Reset throttle timer
       monthTranslateX.setValue(0);
     } else if (state === State.ACTIVE) {
       // Finger is moving - month follows finger in real-time
@@ -722,22 +783,34 @@ export default function CalendarScreen() {
         return;
       }
       
-      const swipeThreshold = screenWidth * 0.25;
-      const velocityThreshold = 500;
+      // Apply resistance to thresholds for consistent behavior across refresh rates
+      const adjustedTranslation = translationX * gestureResistance;
+      const absVelocity = Math.abs(velocityX);
       
-      if (translationX > swipeThreshold || velocityX > velocityThreshold) {
+      // Normalize velocity for high refresh rate displays
+      const normalizedVelocityX = velocityX * 0.90;
+      
+      // Combined threshold check: distance OR velocity
+      const shouldSwipeRight = adjustedTranslation > swipeThreshold || 
+                              (normalizedVelocityX > velocityThreshold && translationX > 0);
+      const shouldSwipeLeft = adjustedTranslation < -swipeThreshold || 
+                             (normalizedVelocityX < -velocityThreshold && translationX < 0);
+      
+      if (shouldSwipeRight) {
         // Swipe right - go to previous month
         goToPreviousMonth();
-      } else if (translationX < -swipeThreshold || velocityX < -velocityThreshold) {
+      } else if (shouldSwipeLeft) {
         // Swipe left - go to next month
         goToNextMonth();
       } else {
-        // Snap back to original position
+        // Snap back to original position with adaptive spring
         Animated.spring(monthTranslateX, {
           toValue: 0,
           useNativeDriver: true,
-          tension: 100,
-          friction: 8,
+          speed: 18,
+          bounciness: 6,
+          restDisplacementThreshold: 0.01,
+          restSpeedThreshold: 0.01,
         }).start();
       }
     }

@@ -17,6 +17,7 @@ import { useGoals } from '../../providers/GoalsProvider';
 import { supabase } from '../../lib/supabase-client';
 import { router } from 'expo-router';
 import GoalModal from '../components/GoalModal';
+import GoalEditModal from '../components/GoalEditModal';
 import GoalCreationChoiceModal from '../components/GoalCreationChoiceModal';
 import ManualGoalCreationModal from '../components/ManualGoalCreationModal';
 import TaskCreationModal from '../components/TaskCreationModal';
@@ -53,6 +54,7 @@ export default function GoalsScreen() {
   const [showManualGoalModal, setShowManualGoalModal] = useState(false);
   const [showTaskCreationModal, setShowTaskCreationModal] = useState(false);
   const [selectedGoalForTask, setSelectedGoalForTask] = useState<GoalWithProgress | null>(null);
+  const [showGoalEditModal, setShowGoalEditModal] = useState(false);
 
   const fetchGoals = useCallback(async () => {
     if (!user) return;
@@ -405,6 +407,28 @@ export default function GoalsScreen() {
           onTaskToggle={handleTaskToggle}
           onGoalUpdated={handleGoalUpdated}
           onGoalDeleted={handleGoalDeleted}
+          onEditGoal={(goal) => {
+            // Close view modal first to prevent stacking, then open edit
+            setShowGoalModal(false);
+            setTimeout(() => {
+              setSelectedGoal(goal as any);
+              setShowGoalEditModal(true);
+            }, 250);
+          }}
+        />
+
+        <GoalEditModal
+          visible={showGoalEditModal}
+          goal={selectedGoal as any}
+          onClose={() => setShowGoalEditModal(false)}
+          onGoalUpdated={(g) => {
+            handleGoalUpdated(g);
+            setShowGoalEditModal(false);
+          }}
+          onGoalDeleted={(id) => {
+            handleGoalDeleted(id);
+            setShowGoalEditModal(false);
+          }}
         />
 
       <GoalCreationChoiceModal

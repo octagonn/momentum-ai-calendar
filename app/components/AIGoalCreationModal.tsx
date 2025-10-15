@@ -17,6 +17,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../providers/ThemeProvider';
 import { useAuth } from '../../providers/AuthProvider';
 import { useUser } from '../../providers/UserProvider';
+import { useSubscription } from '../../providers/SubscriptionProvider';
 import { aiService } from '../../lib/ai-service';
 import { ensureUserProfile } from '../../services/goalPlanning';
 import { notificationService } from '../../services/notifications';
@@ -40,6 +41,7 @@ export default function AIGoalCreationModal({ visible, onClose, onGoalCreated }:
   const { colors, isDark } = useTheme();
   const { user } = useAuth();
   const { user: userProfile } = useUser();
+  const { isPremium, showUpgradeModal } = useSubscription();
   const insets = useSafeAreaInsets();
   const scrollViewRef = useRef<ScrollView>(null);
   
@@ -58,6 +60,13 @@ export default function AIGoalCreationModal({ visible, onClose, onGoalCreated }:
       resetConversation();
     }
   }, [visible]);
+
+  // Re-check premium access when isPremium changes (e.g., after mock purchase)
+  useEffect(() => {
+    if (visible) {
+      checkPremiumAccess();
+    }
+  }, [isPremium, visible]);
 
   const resetConversation = () => {
     setMessages([]);
@@ -288,7 +297,7 @@ export default function AIGoalCreationModal({ visible, onClose, onGoalCreated }:
                 style={[styles.upgradeButton, { backgroundColor: colors.primary }]}
                 onPress={() => {
                   onClose();
-                  // Import and use showUpgradeModal from parent component
+                  showUpgradeModal('ai_goal');
                 }}
               >
                 <Text style={[styles.upgradeButtonText, { color: colors.background }]}>

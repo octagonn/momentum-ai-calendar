@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
+import { useColorScheme } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import createContextHook from "@nkzw/create-context-hook";
 
@@ -15,11 +16,17 @@ interface Colors {
   textSecondary: string;
   textMuted: string;
   border: string;
+  error: string;
+  surface: string;
 }
+
+export type ThemeMode = 'light' | 'dark' | 'system';
 
 interface ThemeContextType {
   isDark: boolean;
   colors: Colors;
+  themeMode: ThemeMode;
+  setThemeMode: (mode: ThemeMode) => void;
   toggleTheme: () => void;
 }
 
@@ -36,6 +43,8 @@ const lightColors: Colors = {
   textSecondary: "#64748b",
   textMuted: "#94a3b8",
   border: "#e2e8f0",
+  error: "#ef4444",
+  surface: "#f8fafc",
 };
 
 const darkColors: Colors = {
@@ -51,31 +60,57 @@ const darkColors: Colors = {
   textSecondary: "#a1a1aa",
   textMuted: "#71717a",
   border: "#374151",
+  error: "#ef4444",
+  surface: "#1e1e3a",
 };
 
 export const [ThemeProvider, useTheme] = createContextHook<ThemeContextType>(() => {
-  const [isDark, setIsDark] = useState(true);
+  const systemColorScheme = useColorScheme();
+  const [themeMode, setThemeModeState] = useState<ThemeMode>('system');
+  const [isDark, setIsDark] = useState(systemColorScheme === 'dark');
 
   useEffect(() => {
     loadTheme();
   }, []);
 
+  useEffect(() => {
+    // Update isDark when system theme or themeMode changes
+    if (themeMode === 'system') {
+      setIsDark(systemColorScheme === 'dark');
+    } else {
+      setIsDark(themeMode === 'dark');
+    }
+  }, [themeMode, systemColorScheme]);
+
   const loadTheme = async () => {
     try {
-      const savedTheme = await AsyncStorage.getItem("theme");
-      if (savedTheme !== null) {
-        setIsDark(savedTheme === "dark");
+      const savedTheme = await AsyncStorage.getItem("themeMode");
+      if (savedTheme !== null && (savedTheme === 'light' || savedTheme === 'dark' || savedTheme === 'system')) {
+        setThemeModeState(savedTheme as ThemeMode);
+      } else {
+        // Default to system theme
+        setThemeModeState('system');
       }
     } catch (error) {
       console.error("Error loading theme:", error);
     }
   };
 
+  const setThemeMode = useCallback(async (mode: ThemeMode) => {
+    setThemeModeState(mode);
+    try {
+      await AsyncStorage.setItem("themeMode", mode);
+    } catch (error) {
+      console.error("Error saving theme:", error);
+    }
+  }, []);
+
   const toggleTheme = useCallback(async () => {
     const newTheme = !isDark;
-    setIsDark(newTheme);
+    const newMode: ThemeMode = newTheme ? 'dark' : 'light';
+    setThemeModeState(newMode);
     try {
-      await AsyncStorage.setItem("theme", newTheme ? "dark" : "light");
+      await AsyncStorage.setItem("themeMode", newMode);
     } catch (error) {
       console.error("Error saving theme:", error);
     }
@@ -84,6 +119,8 @@ export const [ThemeProvider, useTheme] = createContextHook<ThemeContextType>(() 
   return useMemo(() => ({
     isDark,
     colors: isDark ? darkColors : lightColors,
+    themeMode,
+    setThemeMode,
     toggleTheme,
-  }), [isDark, toggleTheme]);
+  }), [isDark, themeMode, setThemeMode, toggleTheme]);
 });
