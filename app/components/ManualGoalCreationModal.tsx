@@ -38,7 +38,7 @@ export default function ManualGoalCreationModal({
   const { colors, isDark } = useTheme();
   const { user } = useAuth();
   const { user: userProfile } = useUser();
-  const { showUpgradeModal } = useSubscription();
+  const { isPremium: subscriptionPremium, showUpgradeModal } = useSubscription();
   const insets = useSafeAreaInsets();
   
   const [title, setTitle] = useState('');
@@ -47,7 +47,9 @@ export default function ManualGoalCreationModal({
   const [color, setColor] = useState('#3B82F6');
   const [loading, setLoading] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
-  const isPremium = userProfile?.isPremium || false;
+  
+  // Use both sources of premium status for maximum compatibility  
+  const isPremium = userProfile?.isPremium || subscriptionPremium || false;
 
   const handleSave = async () => {
     if (!title.trim()) {
@@ -239,7 +241,15 @@ export default function ManualGoalCreationModal({
             ) : (
               <TouchableOpacity
                 style={[styles.premiumColorSection, { backgroundColor: colors.surface, borderColor: colors.border }]}
-                onPress={() => showUpgradeModal('color_picker')}
+                onPress={() => {
+                  console.log('ManualGoalCreationModal: User wants to upgrade for color picker');
+                  // Close this modal first to prevent stacking
+                  onClose();
+                  // Wait a bit then show upgrade modal
+                  setTimeout(() => {
+                    showUpgradeModal('color_picker');
+                  }, 300);
+                }}
               >
                 <View style={styles.premiumColorContent}>
                   <View style={[styles.defaultColorPreview, { backgroundColor: featureGate.getDefaultGoalColor() }]} />

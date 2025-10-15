@@ -28,8 +28,8 @@ const { width } = Dimensions.get('window');
 export default function ViewAllTasksModal({ visible, onClose }: ViewAllTasksModalProps) {
   const { colors, isDark } = useTheme();
   const { tasks, goals, toggleTask } = useGoals();
-  const [selectedFilter, setSelectedFilter] = useState<FilterType>('all');
-  const [selectedSort, setSelectedSort] = useState<SortType>('date-desc');
+  const [selectedFilter, setSelectedFilter] = useState<FilterType>('incomplete');
+  const [selectedSort, setSelectedSort] = useState<SortType>('date-asc');
   const [showFilterMenu, setShowFilterMenu] = useState(false);
   const [showSortMenu, setShowSortMenu] = useState(false);
   const [selectedTask, setSelectedTask] = useState<any>(null);

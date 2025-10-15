@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useMemo } from "react";
 import {
   StyleSheet,
   Text,
@@ -71,8 +71,6 @@ export default function HomeScreen() {
     return todaysTasks;
   };
 
-  const todaysTasksFromGoals = getTodaysTasksFromGoals();
-  
   // Get today's database tasks
   const getTodaysDatabaseTasks = () => {
     const today = new Date();
@@ -81,7 +79,6 @@ export default function HomeScreen() {
     const todayLocalString = today.getFullYear() + '-' + 
       String(today.getMonth() + 1).padStart(2, '0') + '-' + 
       String(today.getDate()).padStart(2, '0');
-    
     
     const filteredTasks = tasks.filter(task => {
       if (!task.due_at) {
@@ -93,9 +90,8 @@ export default function HomeScreen() {
       const taskLocalDateString = taskDate.getFullYear() + '-' + 
         String(taskDate.getMonth() + 1).padStart(2, '0') + '-' + 
         String(taskDate.getDate()).padStart(2, '0');
-      const matches = taskLocalDateString === todayLocalString;
       
-      return matches;
+      return taskLocalDateString === todayLocalString;
     });
     
     return filteredTasks.map(task => {
@@ -118,7 +114,9 @@ export default function HomeScreen() {
     });
   };
 
-  const todaysDatabaseTasks = getTodaysDatabaseTasks();
+  // Compute tasks - these will re-compute when tasks or goals change
+  const todaysTasksFromGoals = useMemo(() => getTodaysTasksFromGoals(), [goals]);
+  const todaysDatabaseTasks = useMemo(() => getTodaysDatabaseTasks(), [tasks, goals]);
   
   // Combine both goal-generated tasks and database tasks
   const allTodaysTasks = [...todaysTasksFromGoals, ...todaysDatabaseTasks];
@@ -1006,18 +1004,11 @@ export default function HomeScreen() {
             
             const upcomingGoals = goals
               .filter(goal => {
-                // Only show active goals
-                if (goal.status !== 'active') {
+                // Show all goals except completed ones
+                if (goal.status === 'completed' || goal.status === 'archived') {
                   return false;
                 }
-                // If no target_date, include it (ongoing goals)
-                if (!goal.target_date) {
-                  return true;
-                }
-                // Only show future goals
-                const targetDate = new Date(goal.target_date);
-                const isFuture = targetDate > now;
-                return isFuture;
+                return true;
               })
               .sort((a, b) => {
                 // Sort by target_date (closest first)

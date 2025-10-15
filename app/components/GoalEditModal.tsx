@@ -48,7 +48,7 @@ export default function GoalEditModal({ visible, goal, onClose, onGoalUpdated, o
   const { colors, isDark } = useTheme();
   const { user } = useAuth();
   const { user: userProfile } = useUser();
-  const { showUpgradeModal } = useSubscription();
+  const { isPremium: subscriptionPremium, showUpgradeModal } = useSubscription();
   const insets = useSafeAreaInsets();
   
   const [title, setTitle] = useState('');
@@ -57,7 +57,9 @@ export default function GoalEditModal({ visible, goal, onClose, onGoalUpdated, o
   const [color, setColor] = useState('#3B82F6');
   const [loading, setLoading] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const isPremium = userProfile?.isPremium || false;
+  
+  // Use both sources of premium status for maximum compatibility
+  const isPremium = userProfile?.isPremium || subscriptionPremium || false;
 
   useEffect(() => {
     if (visible && goal) {
@@ -65,8 +67,19 @@ export default function GoalEditModal({ visible, goal, onClose, onGoalUpdated, o
       setDescription(goal.description || '');
       setTargetDate(goal.target_date ? goal.target_date.split('T')[0] : '');
       setColor(goal.color || '#3B82F6');
+    } else if (!visible) {
+      // Reset state when modal closes to prevent stale data
+      setLoading(false);
+      setShowDeleteConfirm(false);
     }
   }, [visible, goal]);
+
+  // Handle premium status changes for real-time updates
+  useEffect(() => {
+    if (visible && isPremium) {
+      console.log('GoalEditModal: Premium status activated, UI should update');
+    }
+  }, [isPremium, visible]);
 
   const handleSave = async () => {
     if (!goal || !user || !title.trim()) {
@@ -225,7 +238,10 @@ export default function GoalEditModal({ visible, goal, onClose, onGoalUpdated, o
       visible={visible}
       animationType="slide"
       presentationStyle="pageSheet"
-      onRequestClose={onClose}
+      onRequestClose={() => {
+        console.log('GoalEditModal: onRequestClose called');
+        onClose();
+      }}
     >
       {loading && (
         <View style={[styles.loadingOverlay, { backgroundColor: 'rgba(0,0,0,0.5)' }]}>
@@ -241,7 +257,16 @@ export default function GoalEditModal({ visible, goal, onClose, onGoalUpdated, o
       >
         {/* Header */}
         <View style={[styles.header, { borderBottomColor: colors.border }]}>
-          <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+          <TouchableOpacity 
+            onPress={() => {
+              console.log('GoalEditModal: Close button pressed');
+              // Small delay to prevent race conditions with other modals
+              setTimeout(() => {
+                onClose();
+              }, 100);
+            }} 
+            style={styles.closeButton}
+          >
             <X size={24} color={colors.text} />
           </TouchableOpacity>
           <Text style={[styles.headerTitle, { color: colors.text }]}>
@@ -327,7 +352,16 @@ export default function GoalEditModal({ visible, goal, onClose, onGoalUpdated, o
             ) : (
               <TouchableOpacity
                 style={[styles.premiumColorSection, { backgroundColor: colors.surface, borderColor: colors.border }]}
-                onPress={() => showUpgradeModal('color_picker')}
+                onPress={() => {
+                  console.log('GoalEditModal: User wants to upgrade for color picker');
+                  // Close this modal first to prevent stacking
+                  onClose();
+                  // Wait a bit then show upgrade modal
+                  setTimeout(() => {
+                    showUpgradeModal('color_picker');
+                  }, 300);
+                }}
+                activeOpacity={0.7}
               >
                 <View style={styles.premiumColorContent}>
                   <View style={[styles.defaultColorPreview, { backgroundColor: goal?.color || featureGate.getDefaultGoalColor() }]} />

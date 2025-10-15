@@ -1,4 +1,4 @@
-rando# Momentum App - Updated Premium vs Free Feature Strategy
+# Momentum App - Updated Premium vs Free Feature Strategy
 
 ## 🎯 Feature Tiers Overview
 

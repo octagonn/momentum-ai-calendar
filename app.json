@@ -4,12 +4,13 @@
     "slug": "momentum-ios-app",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
-    "scheme": "myapp",
+    "icon": "./assets/images/app-store-logo.png",
+    "scheme": "momentum",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "sdkVersion": "54.0.0",
     "projectId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    "_comment": "Using app-store-logo.png as the main app icon. Other icons (adaptive, favicon, splash) use icon.png as fallback.",
     "splash": {
       "image": "./assets/images/splash-icon.png",
       "resizeMode": "contain",
@@ -17,19 +18,44 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "app.rork.momentum-ios-app",
+      "bundleIdentifier": "com.momentumaicalendar.app",
+      "buildNumber": "1",
       "infoPlist": {
-        "UIBackgroundModes": ["background-fetch", "background-processing"]
-      }
+        "UIBackgroundModes": [
+          "background-fetch",
+          "background-processing"
+        ],
+        "NSUserNotificationsUsageDescription": "We send you reminders to help you stay on track with your goals and tasks.",
+        "NSCameraUsageDescription": "Upload a profile picture or attach images to your goals.",
+        "NSPhotoLibraryUsageDescription": "Choose photos to attach to your goals or set as your profile picture."
+      },
+      "config": {
+        "usesNonExemptEncryption": false
+      },
+      "associatedDomains": ["applinks:rork.com"]
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#1a1a1a"
       },
-      "package": "app.rork.momentum-ios-app",
+      "package": "com.momentumaicalendar.app",
       "permissions": [
         "android.permission.VIBRATE"
+      ],
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "https",
+              "host": "rork.com",
+              "pathPrefix": "/auth/callback"
+            }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
       ]
     },
     "web": {
@@ -53,6 +79,14 @@
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {
+        "origin": "https://rork.com/"
+      },
+      "eas": {
+        "projectId": "0c48d71b-377c-4bf2-ab52-76b601680f84"
+      }
     }
   }
 }

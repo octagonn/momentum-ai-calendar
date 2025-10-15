@@ -28,9 +28,11 @@ export default function GoalCreationChoiceModal({
 }: GoalCreationChoiceModalProps) {
   const { colors, isDark } = useTheme();
   const { user: userProfile } = useUser();
-  const { showUpgradeModal } = useSubscription();
+  const { isPremium: subscriptionPremium, showUpgradeModal } = useSubscription();
   const insets = useSafeAreaInsets();
-  const isPremium = userProfile?.isPremium || false;
+  
+  // Use both sources of premium status for maximum compatibility
+  const isPremium = userProfile?.isPremium || subscriptionPremium || false;
 
   return (
     <Modal

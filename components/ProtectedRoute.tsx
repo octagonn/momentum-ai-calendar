@@ -12,12 +12,21 @@ interface ProtectedRouteProps {
 
 export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
   const { user: authUser, loading: authLoading } = useAuth();
-  const { user: profileUser, loading: profileLoading, refreshUser } = useUser();
+  const { user: profileUser, loading: profileLoading, isValidatingSession, refreshUser } = useUser();
   const { colors } = useTheme();
 
+  console.log('🔒 ProtectedRoute state:', { 
+    authUser: !!authUser, 
+    authLoading, 
+    profileUser: !!profileUser, 
+    profileLoading,
+    isValidatingSession 
+  });
 
-  // Show loading screen while loading auth or profile
-  if (authLoading || profileLoading) {
+  // Show loading screen while loading auth, profile, or validating session
+  // Critical: Keep showing loading during session validation to prevent content flash
+  if (authLoading || profileLoading || isValidatingSession) {
+    console.log('⏳ Showing loading screen');
     return (
       <View style={[styles.loadingContainer, { backgroundColor: colors?.background || '#ffffff' }]}>
         <ActivityIndicator size="large" color={colors?.primary || '#667eea'} />
@@ -27,7 +36,7 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
 
   // Show auth screen if not authenticated
   if (!authUser) {
-    console.log('Showing auth screen');
+    console.log('🔓 Showing auth screen (no authUser)');
     return <AuthScreen onAuthSuccess={() => {}} />;
   }
 

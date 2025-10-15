@@ -26,7 +26,7 @@ class SubscriptionService {
   private pendingPurchaseReject: ((reason?: any) => void) | null = null;
 
   // SKU configured in App Store Connect (7-day trial handled by Apple config)
-  public readonly PREMIUM_SKU = 'com.yourapp.premium.monthly';
+  public readonly PREMIUM_SKU = 'com.momentumcalendar.premium.monthly';
 
   private constructor() {}
 
@@ -106,8 +106,18 @@ class SubscriptionService {
   async getSubscriptions(): Promise<Subscription[]> {
     try {
       if (this.isExpoGoOrWeb) {
-        console.log('getSubscriptions skipped in Expo Go/Web.');
-        return [];
+        console.log('getSubscriptions: Providing mock subscriptions for Expo Go/Web testing');
+        // Provide mock subscriptions for testing in Expo Go
+        return [
+          {
+            productId: this.PREMIUM_SKU,
+            title: 'Momentum Premium',
+            description: '7-day free trial, then $4.99/month',
+            price: '$4.99',
+            localizedPrice: '$4.99',
+            currency: 'USD'
+          }
+        ];
       }
       const subs = await iapWrapper.getSubscriptions({ skus: [this.PREMIUM_SKU] });
       return subs;
@@ -120,9 +130,37 @@ class SubscriptionService {
   async purchaseSubscription(): Promise<boolean> {
     try {
       if (this.isExpoGoOrWeb) {
-        Alert.alert('Subscriptions Unavailable in Expo Go', 'Install a Development Build to test purchases.');
-        return false;
+        // In Expo Go, simulate the purchase flow for UI testing
+        return new Promise((resolve) => {
+          Alert.alert(
+            'Expo Go Testing Mode',
+            'This is a test purchase flow. In a production build, this would process a real payment through the App Store.\n\nWould you like to simulate a successful purchase?',
+            [
+              {
+                text: 'Cancel',
+                style: 'cancel',
+                onPress: () => resolve(false)
+              },
+              {
+                text: 'Simulate Purchase',
+                onPress: async () => {
+                  console.log('Simulating successful purchase in Expo Go');
+                  
+                  // Simulate premium upgrade in development
+                  try {
+                    await this.simulatePremiumUpgrade();
+                    resolve(true);
+                  } catch (error) {
+                    console.error('Error simulating premium upgrade:', error);
+                    resolve(false);
+                  }
+                }
+              }
+            ]
+          );
+        });
       }
+      
       const result = new Promise<boolean>((resolve, reject) => {
         this.pendingPurchaseResolve = resolve;
         this.pendingPurchaseReject = reject;
@@ -136,11 +174,95 @@ class SubscriptionService {
     }
   }
 
+  private async simulatePremiumUpgrade(): Promise<void> {
+    if (!this.currentUserId) {
+      throw new Error('No user ID available');
+    }
+
+    // Update user profile to premium in Supabase
+    // Try to update premium fields, but handle gracefully if they don't exist yet
+    try {
+      const { error } = await supabase
+        .from('user_profiles')
+        .update({
+          subscription_tier: 'premium',
+          subscription_status: 'active',
+          trial_ends_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), // 7 days from now
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', this.currentUserId);
+
+      if (error) {
+        console.log('Premium columns not found in database, but simulation completed for UI testing');
+        console.log('Database update error (expected):', error.message);
+        return;
+      }
+    } catch (dbError) {
+      console.log('Simulating premium upgrade (database columns not available yet)');
+      console.log('Database error (expected):', (dbError as any)?.message || dbError);
+    }
+
+    // Also update auth.users metadata for premium status
+    try {
+      const { error: authError } = await supabase.auth.updateUser({
+        data: {
+          subscription_tier: 'premium',
+          subscription_status: 'active',
+          is_premium: true,
+          trial_ends_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+        }
+      });
+      
+      if (authError) {
+        console.log('Could not update auth metadata:', authError.message);
+      } else {
+        console.log('Successfully updated auth.users metadata with premium status');
+      }
+    } catch (authMetaError) {
+      console.log('Auth metadata update error (non-critical):', (authMetaError as any)?.message);
+    }
+
+    console.log('Successfully simulated premium upgrade for user:', this.currentUserId);
+  }
+
+  formatPrice(subscription: Subscription): string {
+    if (this.isExpoGoOrWeb) {
+      return '$4.99/month after 7-day free trial';
+    }
+    return subscription.localizedPrice || subscription.price || '$4.99/month';
+  }
+
   async restorePurchases(): Promise<boolean> {
     try {
       if (this.isExpoGoOrWeb) {
-        Alert.alert('Restore Unavailable in Expo Go', 'Install a Development Build to restore purchases.');
-        return false;
+        // In Expo Go, provide testing options for restore flow
+        return new Promise((resolve) => {
+          Alert.alert(
+            'Expo Go Testing Mode',
+            'In production, this would restore purchases from the App Store.\n\nSimulate restoring premium status?',
+            [
+              {
+                text: 'Cancel',
+                style: 'cancel',
+                onPress: () => resolve(false)
+              },
+              {
+                text: 'Simulate Restore',
+                onPress: async () => {
+                  try {
+                    await this.simulatePremiumUpgrade();
+                    Alert.alert('Success', 'Premium status restored (simulation)');
+                    resolve(true);
+                  } catch (error) {
+                    console.error('Error simulating restore:', error);
+                    Alert.alert('Error', 'Failed to simulate restore');
+                    resolve(false);
+                  }
+                }
+              }
+            ]
+          );
+        });
       }
       const purchases = await iapWrapper.getAvailablePurchases();
       // Find latest iOS receipt among matching product id

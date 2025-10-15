@@ -3,7 +3,7 @@ import { useAuth } from './AuthProvider';
 import { useUser } from './UserProvider';
 import { subscriptionService, SubscriptionTier } from '../services/subscriptionService';
 import { featureGate } from '../services/featureGate';
-import PremiumUpgradeModal from '../app/components/PremiumUpgradeModal';
+import { getItem, setItem } from '../lib/storage';
 
 interface SubscriptionContextType {
   isLoading: boolean;
@@ -11,6 +11,13 @@ interface SubscriptionContextType {
   subscriptionTier: SubscriptionTier;
   showUpgradeModal: (trigger?: 'goal_limit' | 'ai_goal' | 'color_picker' | 'analytics' | 'general') => void;
   checkSubscriptionStatus: () => Promise<void>;
+  // Modal state for centralized management
+  upgradeModalVisible: boolean;
+  upgradeModalTrigger: 'goal_limit' | 'ai_goal' | 'color_picker' | 'analytics' | 'general';
+  closeUpgradeModal: () => void;
+  handleUpgradeSuccess: () => Promise<void>;
+  // Testing utilities
+  resetPremiumStatus: () => Promise<void>;
 }
 
 const SubscriptionContext = createContext<SubscriptionContextType | undefined>(undefined);
@@ -34,9 +41,10 @@ export const SubscriptionProvider: React.FC<SubscriptionProviderProps> = ({ chil
   const [isLoading, setIsLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [modalTrigger, setModalTrigger] = useState<'goal_limit' | 'ai_goal' | 'color_picker' | 'analytics' | 'general'>('general');
+  const [mockPremiumStatus, setMockPremiumStatus] = useState<boolean>(false); // For testing when DB migration is missing
   
-  const isPremium = userProfile?.isPremium || false;
-  const subscriptionTier = userProfile?.subscriptionTier || 'free';
+  const isPremium = userProfile?.isPremium || mockPremiumStatus || false;
+  const subscriptionTier = userProfile?.subscriptionTier || (mockPremiumStatus ? 'premium' : 'free');
   
   useEffect(() => {
     if (authUser) {
@@ -46,6 +54,11 @@ export const SubscriptionProvider: React.FC<SubscriptionProviderProps> = ({ chil
     }
   }, [authUser]);
 
+  // Load persistent premium status on startup
+  useEffect(() => {
+    loadPersistentPremiumStatus();
+  }, []);
+
   // Cleanup modal state when user changes
   useEffect(() => {
     if (!authUser) {
@@ -53,6 +66,28 @@ export const SubscriptionProvider: React.FC<SubscriptionProviderProps> = ({ chil
     }
   }, [authUser]);
   
+  const loadPersistentPremiumStatus = async () => {
+    try {
+      const stored = await getItem('mock_premium_status');
+      if (stored === 'true') {
+        console.log('SubscriptionProvider: Loading persistent premium status');
+        setMockPremiumStatus(true);
+        featureGate.setMockPremiumOverride(true);
+      }
+    } catch (error) {
+      console.error('Error loading persistent premium status:', error);
+    }
+  };
+
+  const savePersistentPremiumStatus = async (isPremium: boolean) => {
+    try {
+      await setItem('mock_premium_status', isPremium.toString());
+      console.log('SubscriptionProvider: Saved persistent premium status:', isPremium);
+    } catch (error) {
+      console.error('Error saving persistent premium status:', error);
+    }
+  };
+
   const initializeSubscription = async () => {
     if (!authUser) return;
     
@@ -93,25 +128,44 @@ export const SubscriptionProvider: React.FC<SubscriptionProviderProps> = ({ chil
   ) => {
     console.log('SubscriptionProvider: showUpgradeModal called with trigger:', trigger);
     
-    // In Expo Go, just show an alert instead of the modal to prevent navigation issues
-    if (__DEV__) {
-      console.log('SubscriptionProvider: Skipping modal in development mode to prevent navigation issues');
+    // Prevent multiple modals from opening
+    if (showModal) {
+      console.log('SubscriptionProvider: Modal already open, updating trigger only');
+      setModalTrigger(trigger);
       return;
     }
     
     setModalTrigger(trigger);
     setShowModal(true);
-    
-    // Auto-close modal after 30 seconds to prevent getting stuck
-    setTimeout(() => {
-      console.log('SubscriptionProvider: Auto-closing modal after timeout');
-      setShowModal(false);
-    }, 30000);
+  }, [showModal]);
+  
+  const closeUpgradeModal = useCallback(() => {
+    console.log('SubscriptionProvider: closeUpgradeModal called');
+    setShowModal(false);
+  }, []);
+
+  const resetPremiumStatus = useCallback(async () => {
+    console.log('SubscriptionProvider: Resetting premium status for testing');
+    setMockPremiumStatus(false);
+    featureGate.setMockPremiumOverride(false);
+    await savePersistentPremiumStatus(false);
   }, []);
   
   const handleUpgradeSuccess = async () => {
-    // Refresh subscription status after successful upgrade
+    // First try to refresh subscription status from database
     await checkSubscriptionStatus();
+    
+    // If database doesn't have premium columns yet, use mock status for testing
+    if (!userProfile?.isPremium) {
+      console.log('SubscriptionProvider: Using mock premium status for testing');
+      setMockPremiumStatus(true);
+      
+      // Save persistent premium status
+      await savePersistentPremiumStatus(true);
+      
+      // Also update featureGate service to use mock premium status
+      featureGate.setMockPremiumOverride(true);
+    }
   };
   
   const value: SubscriptionContextType = {
@@ -120,22 +174,19 @@ export const SubscriptionProvider: React.FC<SubscriptionProviderProps> = ({ chil
     subscriptionTier,
     showUpgradeModal,
     checkSubscriptionStatus,
+    // Modal state for centralized management
+    upgradeModalVisible: showModal,
+    upgradeModalTrigger: modalTrigger,
+    closeUpgradeModal,
+    handleUpgradeSuccess,
+    // Testing utilities
+    resetPremiumStatus,
   };
   
   return (
     <SubscriptionContext.Provider value={value}>
       {children}
-      {showModal && (
-        <PremiumUpgradeModal
-          visible={showModal}
-          onClose={() => {
-            console.log('SubscriptionProvider: PremiumUpgradeModal onClose called');
-            setShowModal(false);
-          }}
-          onSuccess={handleUpgradeSuccess}
-          trigger={modalTrigger}
-        />
-      )}
+      {/* PremiumUpgradeModal moved to app layout to prevent modal stacking issues */}
     </SubscriptionContext.Provider>
   );
 };
