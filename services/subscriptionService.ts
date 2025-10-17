@@ -26,7 +26,7 @@ class SubscriptionService {
   private pendingPurchaseReject: ((reason?: any) => void) | null = null;
 
   // SKU configured in App Store Connect (7-day trial handled by Apple config)
-  public readonly PREMIUM_SKU = 'com.momentumcalendar.premium.monthly';
+  public readonly PREMIUM_SKU = 'com.momentumaicalendar.premium.monthly';
 
   private constructor() {}
 
