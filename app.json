@@ -21,10 +21,6 @@
       "bundleIdentifier": "com.momentumaicalendar.app",
       "buildNumber": "1",
       "infoPlist": {
-        "UIBackgroundModes": [
-          "background-fetch",
-          "background-processing"
-        ],
         "NSUserNotificationsUsageDescription": "We send you reminders to help you stay on track with your goals and tasks.",
         "NSCameraUsageDescription": "Upload a profile picture or attach images to your goals.",
         "NSPhotoLibraryUsageDescription": "Choose photos to attach to your goals or set as your profile picture."
