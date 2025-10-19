@@ -26,6 +26,8 @@ interface GoalsContextType {
     completedTasks: number;
     progressPercentage: number;
   };
+  refreshTasks: () => Promise<void>;
+  refreshGoals: () => Promise<void>;
 }
 
 const defaultTasks: Task[] = [];
@@ -729,6 +731,10 @@ export const [GoalsProvider, useGoals] = createContextHook<GoalsContextType>(() 
     await fetchGoalsFromSupabase();
   }, [fetchGoalsFromSupabase]);
 
+  const refreshTasks = useCallback(async () => {
+    await fetchTasks();
+  }, [fetchTasks]);
+
   return useMemo(() => ({
     tasks,
     goals,
@@ -740,6 +746,7 @@ export const [GoalsProvider, useGoals] = createContextHook<GoalsContextType>(() 
     getTasksStats,
     getGoalProgress,
     getTodaysProgress,
+    refreshTasks,
     refreshGoals,
-  }), [tasks, goals, isLoading, toggleTask, updateGoal, addGoal, deleteGoal, getTasksStats, getGoalProgress, getTodaysProgress, refreshGoals]);
+  }), [tasks, goals, isLoading, toggleTask, updateGoal, addGoal, deleteGoal, getTasksStats, getGoalProgress, getTodaysProgress, refreshTasks, refreshGoals]);
 });
