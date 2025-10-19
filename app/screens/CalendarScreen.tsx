@@ -13,6 +13,7 @@ import {
   AppState,
   Easing,
   Platform,
+  RefreshControl,
 } from 'react-native';
 import { PanGestureHandler, State } from 'react-native-gesture-handler';
 import { ChevronDown, ChevronLeft, ChevronRight, Calendar as CalendarIcon, Clock, CheckCircle, Circle } from 'lucide-react-native';
@@ -60,6 +61,7 @@ export default function CalendarScreen() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [goals, setGoals] = useState<Goal[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [selectedGoal, setSelectedGoal] = useState<Goal | null>(null);
   const [showGoalModal, setShowGoalModal] = useState(false);
@@ -182,6 +184,12 @@ export default function CalendarScreen() {
 
     fetchData();
   }, [fetchTasks, fetchGoals]);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await Promise.all([fetchGoals(), fetchTasks()]);
+    setRefreshing(false);
+  }, [fetchGoals, fetchTasks]);
 
   // Enhanced polling mechanism as backup for real-time updates
   useEffect(() => {
@@ -855,6 +863,7 @@ export default function CalendarScreen() {
         style={styles.scrollContainer}
         showsVerticalScrollIndicator={false}
         bounces={true}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         scrollEventThrottle={16}
       >
         {/* Canvas-style Header */}
