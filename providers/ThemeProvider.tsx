@@ -20,7 +20,7 @@ interface Colors {
   surface: string;
 }
 
-export type ThemeMode = 'light' | 'dark' | 'system';
+export type ThemeMode = 'light' | 'dark' | 'galaxy' | 'system';
 
 interface ThemeContextType {
   isDark: boolean;
@@ -28,6 +28,7 @@ interface ThemeContextType {
   themeMode: ThemeMode;
   setThemeMode: (mode: ThemeMode) => void;
   toggleTheme: () => void;
+  isGalaxy: boolean;
 }
 
 const lightColors: Colors = {
@@ -68,24 +69,30 @@ export const [ThemeProvider, useTheme] = createContextHook<ThemeContextType>(() 
   const systemColorScheme = useColorScheme();
   const [themeMode, setThemeModeState] = useState<ThemeMode>('system');
   const [isDark, setIsDark] = useState(systemColorScheme === 'dark');
+  const [isGalaxy, setIsGalaxy] = useState(false);
 
   useEffect(() => {
     loadTheme();
   }, []);
 
   useEffect(() => {
-    // Update isDark when system theme or themeMode changes
+    // Update isDark and isGalaxy when system theme or themeMode changes
     if (themeMode === 'system') {
       setIsDark(systemColorScheme === 'dark');
+      setIsGalaxy(false);
+    } else if (themeMode === 'galaxy') {
+      setIsDark(true); // Galaxy theme is always dark
+      setIsGalaxy(true);
     } else {
       setIsDark(themeMode === 'dark');
+      setIsGalaxy(false);
     }
   }, [themeMode, systemColorScheme]);
 
   const loadTheme = async () => {
     try {
       const savedTheme = await AsyncStorage.getItem("themeMode");
-      if (savedTheme !== null && (savedTheme === 'light' || savedTheme === 'dark' || savedTheme === 'system')) {
+      if (savedTheme !== null && (savedTheme === 'light' || savedTheme === 'dark' || savedTheme === 'galaxy' || savedTheme === 'system')) {
         setThemeModeState(savedTheme as ThemeMode);
       } else {
         // Default to system theme
@@ -122,5 +129,6 @@ export const [ThemeProvider, useTheme] = createContextHook<ThemeContextType>(() 
     themeMode,
     setThemeMode,
     toggleTheme,
-  }), [isDark, themeMode, setThemeMode, toggleTheme]);
+    isGalaxy,
+  }), [isDark, themeMode, setThemeMode, toggleTheme, isGalaxy]);
 });

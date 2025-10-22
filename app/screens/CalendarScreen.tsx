@@ -13,6 +13,8 @@ import {
   AppState,
   Easing,
   Platform,
+  RefreshControl,
+  ImageBackground,
 } from 'react-native';
 import { PanGestureHandler, State } from 'react-native-gesture-handler';
 import { ChevronDown, ChevronLeft, ChevronRight, Calendar as CalendarIcon, Clock, CheckCircle, Circle } from 'lucide-react-native';
@@ -53,13 +55,14 @@ interface Goal {
 }
 
 export default function CalendarScreen() {
-  const { colors, isDark } = useTheme();
+  const { colors, isDark, isGalaxy } = useTheme();
   const { user } = useAuth();
   const insets = useSafeAreaInsets();
   
   const [tasks, setTasks] = useState<Task[]>([]);
   const [goals, setGoals] = useState<Goal[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [selectedGoal, setSelectedGoal] = useState<Goal | null>(null);
   const [showGoalModal, setShowGoalModal] = useState(false);
@@ -182,6 +185,12 @@ export default function CalendarScreen() {
 
     fetchData();
   }, [fetchTasks, fetchGoals]);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await Promise.all([fetchGoals(), fetchTasks()]);
+    setRefreshing(false);
+  }, [fetchGoals, fetchTasks]);
 
   // Enhanced polling mechanism as backup for real-time updates
   useEffect(() => {
@@ -851,10 +860,18 @@ export default function CalendarScreen() {
 
   return (
     <View key={refreshKey} style={[styles.container, { backgroundColor: colors.background }]}>
+      {isGalaxy && (
+        <ImageBackground 
+          source={require('@/assets/images/background.png')} 
+          style={StyleSheet.absoluteFillObject} 
+          resizeMode="cover"
+        />
+      )}
       <ScrollView 
         style={styles.scrollContainer}
         showsVerticalScrollIndicator={false}
         bounces={true}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         scrollEventThrottle={16}
       >
         {/* Canvas-style Header */}
@@ -945,7 +962,7 @@ export default function CalendarScreen() {
                                 key={dotIndex}
                                 style={[
                                   styles.eventDot,
-                                  { backgroundColor: colors.primary }
+                                  { backgroundColor: isDark ? 'white' : 'black' }
                                 ]}
                               />
                             ))}
@@ -1009,7 +1026,7 @@ export default function CalendarScreen() {
                                   key={dotIndex}
                                   style={[
                                     styles.eventDot,
-                                    { backgroundColor: colors.primary }
+                                    { backgroundColor: isDark ? 'white' : 'black' }
                                   ]}
                                 />
                               ))}
@@ -1091,7 +1108,7 @@ export default function CalendarScreen() {
                                 key={dotIndex}
                                 style={[
                                   styles.eventDot,
-                                  { backgroundColor: colors.primary }
+                                  { backgroundColor: isDark ? 'white' : 'black' }
                                 ]}
                               />
                             ))}
@@ -1334,6 +1351,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     marginBottom: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
   },
   eventContent: {
     flex: 1,

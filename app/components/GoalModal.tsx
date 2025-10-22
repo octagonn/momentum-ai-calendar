@@ -8,6 +8,7 @@ import {
   ScrollView,
   ActivityIndicator,
   Alert,
+  ImageBackground,
 } from 'react-native';
 import { X, Calendar, Clock, CheckCircle, Circle, Target, Edit3 } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -52,7 +53,7 @@ interface GoalModalProps {
 }
 
 export default function GoalModal({ visible, goal, onClose, onTaskToggle, onGoalUpdated, onGoalDeleted, onEditGoal }: GoalModalProps) {
-  const { colors, isDark } = useTheme();
+  const { colors, isDark, isGalaxy } = useTheme();
   const { user } = useAuth();
   const insets = useSafeAreaInsets();
   
@@ -310,7 +311,14 @@ export default function GoalModal({ visible, goal, onClose, onTaskToggle, onGoal
       presentationStyle="pageSheet"
       onRequestClose={onClose}
     >
-      <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <View style={[styles.container, { backgroundColor: isGalaxy ? 'rgba(0, 0, 0, 0.5)' : colors.background }]}>
+        {isGalaxy && (
+          <ImageBackground 
+            source={require('@/assets/images/background.png')} 
+            style={StyleSheet.absoluteFillObject} 
+            resizeMode="cover"
+          />
+        )}
         <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
           <View style={styles.headerContent}>
             <View style={[styles.goalColorIndicator, { backgroundColor: currentGoal.color || colors.primary }]} />
@@ -451,7 +459,7 @@ function TaskItem({ task, onToggle, onEdit, onPress, colors, isDark, formatDate,
       style={[
         styles.taskItem,
         { 
-          backgroundColor: colors.card,
+          backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(255, 255, 255, 0.8)',
           borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)',
         }
       ]}
