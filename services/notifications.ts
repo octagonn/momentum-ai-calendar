@@ -97,24 +97,30 @@ export class NotificationService {
     due_at: string;
     goal_id: string;
     goal_title: string;
-  }>): Promise<string[]> {
+  }>, reminderMinutes: number = 15): Promise<string[]> {
     const notificationIds: string[] = [];
 
     for (const task of tasks) {
-      const scheduledTime = new Date(task.due_at);
+      const dueTime = new Date(task.due_at);
       
       // Only schedule if the task is in the future
-      if (scheduledTime > new Date()) {
-        const notificationId = await this.scheduleTaskNotification({
-          taskId: task.id,
-          goalId: task.goal_id,
-          title: task.title,
-          body: `Time for your task: ${task.title}`,
-          scheduledTime,
-        });
+      if (dueTime > new Date()) {
+        // Calculate reminder time (X minutes before due time)
+        const reminderTime = new Date(dueTime.getTime() - (reminderMinutes * 60 * 1000));
+        
+        // Only schedule if the reminder time is in the future
+        if (reminderTime > new Date()) {
+          const notificationId = await this.scheduleTaskNotification({
+            taskId: task.id,
+            goalId: task.goal_id,
+            title: task.title,
+            body: `Time for your task: ${task.title}`,
+            scheduledTime: reminderTime,
+          });
 
-        if (notificationId) {
-          notificationIds.push(notificationId);
+          if (notificationId) {
+            notificationIds.push(notificationId);
+          }
         }
       }
     }

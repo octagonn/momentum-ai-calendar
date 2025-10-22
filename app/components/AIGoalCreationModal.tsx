@@ -18,6 +18,7 @@ import { useTheme } from '../../providers/ThemeProvider';
 import { useAuth } from '../../providers/AuthProvider';
 import { useUser } from '../../providers/UserProvider';
 import { useSubscription } from '../../providers/SubscriptionProvider';
+import { useNotifications } from '../../providers/NotificationProvider';
 import { aiService } from '../../lib/ai-service';
 import { ensureUserProfile } from '../../services/goalPlanning';
 import { notificationService } from '../../services/notifications';
@@ -42,6 +43,7 @@ export default function AIGoalCreationModal({ visible, onClose, onGoalCreated }:
   const { user } = useAuth();
   const { user: userProfile } = useUser();
   const { isPremium, showUpgradeModal } = useSubscription();
+  const { preferences: notificationPreferences } = useNotifications();
   const insets = useSafeAreaInsets();
   const scrollViewRef = useRef<ScrollView>(null);
   
@@ -196,7 +198,9 @@ export default function AIGoalCreationModal({ visible, onClose, onGoalCreated }:
 
         // Schedule notifications for the tasks
         try {
-          await notificationService.scheduleMultipleTaskNotifications(planResponse.tasks);
+          // Get user's reminder preference from notification settings
+          const reminderMinutes = notificationPreferences.taskReminderMinutes || 15;
+          await notificationService.scheduleMultipleTaskNotifications(planResponse.tasks, reminderMinutes);
         } catch (notificationError) {
           console.warn('Failed to schedule notifications:', notificationError);
         }

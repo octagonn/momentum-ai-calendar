@@ -43,7 +43,7 @@ interface GoalWithProgress extends Goal {
 export default function GoalsScreen() {
   const { colors, isDark, isGalaxy } = useTheme();
   const { user } = useAuth();
-  const { updateGoal } = useGoals();
+  const { updateGoal, refreshTasks } = useGoals();
   const insets = useSafeAreaInsets();
   
   const [goals, setGoals] = useState<GoalWithProgress[]>([]);
@@ -204,10 +204,16 @@ export default function GoalsScreen() {
     setShowTaskCreationModal(true);
   };
 
-  const handleTaskCreated = (task: any) => {
+  const handleTaskCreated = async (task: any) => {
     console.log('Task created:', task);
-    // Refresh goals to update task counts
-    fetchGoals();
+    // Refresh both tasks and goals to ensure homepage updates immediately
+    try {
+      await refreshTasks();
+      await fetchGoals();
+      console.log('Task creation: Successfully refreshed tasks and goals');
+    } catch (error) {
+      console.error('Error refreshing after task creation:', error);
+    }
   };
 
   const handleTaskToggle = async (taskId: string, completed: boolean) => {
