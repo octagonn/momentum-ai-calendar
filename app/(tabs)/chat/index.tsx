@@ -10,6 +10,7 @@ import {
   Platform,
   ActivityIndicator,
   Alert,
+  ImageBackground,
 } from 'react-native';
 import { Send, Bot, CheckCircle, Sparkles, MessageSquare, Target, Crown, Plus } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -31,7 +32,7 @@ interface Message {
 }
 
 export default function ChatScreen() {
-  const { colors, isDark } = useTheme();
+  const { colors, isDark, isGalaxy } = useTheme();
   const { user } = useAuth();
   const { isPremium } = useSubscription();
   const insets = useSafeAreaInsets();
@@ -378,7 +379,7 @@ export default function ChatScreen() {
 
     return (
       <View style={styles.starterContainer}>
-        <View style={[styles.welcomeCard, { backgroundColor: colors.surface }]}>
+        <View style={[styles.welcomeCard, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(255, 255, 255, 0.8)' }]}>
           <Bot size={32} color={colors.primary} />
           <Text style={[styles.welcomeTitle, { color: colors.text }]}>
             AI Chat Assistant
@@ -416,7 +417,7 @@ export default function ChatScreen() {
             <TouchableOpacity
               key={index}
               style={[styles.starterButton, { 
-                backgroundColor: colors.surface,
+                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(255, 255, 255, 0.8)',
                 borderColor: colors.border 
               }]}
               onPress={() => handleStarterButton(starter.text)}
@@ -455,10 +456,18 @@ export default function ChatScreen() {
   };
 
   return (
-    <KeyboardAvoidingView
-      style={[styles.container, { backgroundColor: colors.background }]}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-    >
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      {isGalaxy && (
+        <ImageBackground 
+          source={require('@/assets/images/background.png')} 
+          style={StyleSheet.absoluteFillObject} 
+          resizeMode="cover"
+        />
+      )}
+      <KeyboardAvoidingView
+        style={styles.keyboardContainer}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
       {/* Header */}
       <View style={[styles.header, { borderBottomColor: colors.border, paddingTop: insets.top + 16 }]}>
         <Text style={[styles.headerTitle, { color: colors.text }]}>
@@ -467,7 +476,7 @@ export default function ChatScreen() {
         {messages.length > 0 && (
           <TouchableOpacity
             style={[styles.newChatButton, { 
-              backgroundColor: colors.surface,
+              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(255, 255, 255, 0.8)',
               borderColor: colors.border 
             }]}
             onPress={handleNewChat}
@@ -559,7 +568,7 @@ export default function ChatScreen() {
       <View style={[styles.inputContainer, { borderTopColor: colors.border }]}>
           <TextInput
           style={[styles.textInput, { 
-            backgroundColor: colors.surface, 
+            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(255, 255, 255, 0.8)', 
             color: colors.text,
             borderColor: colors.border 
           }]}
@@ -590,12 +599,16 @@ export default function ChatScreen() {
           )}
           </TouchableOpacity>
       </View>
-    </KeyboardAvoidingView>
+      </KeyboardAvoidingView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
+    flex: 1,
+  },
+  keyboardContainer: {
     flex: 1,
   },
   header: {

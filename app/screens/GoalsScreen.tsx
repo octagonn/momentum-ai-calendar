@@ -8,6 +8,7 @@ import {
   RefreshControl,
   ActivityIndicator,
   Alert,
+  ImageBackground,
 } from 'react-native';
 import { Plus, Target, Calendar, CheckCircle } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -40,7 +41,7 @@ interface GoalWithProgress extends Goal {
 }
 
 export default function GoalsScreen() {
-  const { colors, isDark } = useTheme();
+  const { colors, isDark, isGalaxy } = useTheme();
   const { user } = useAuth();
   const { updateGoal } = useGoals();
   const insets = useSafeAreaInsets();
@@ -274,7 +275,7 @@ export default function GoalsScreen() {
     
     return (
       <TouchableOpacity
-        style={[styles.goalCard, { backgroundColor: colors.card }]}
+        style={[styles.goalCard, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(255, 255, 255, 0.8)' }]}
         onPress={() => handleGoalPress(item)}
         activeOpacity={0.7}
       >
@@ -369,6 +370,13 @@ export default function GoalsScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
+      {isGalaxy && (
+        <ImageBackground 
+          source={require('@/assets/images/background.png')} 
+          style={StyleSheet.absoluteFillObject} 
+          resizeMode="cover"
+        />
+      )}
       <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
         <Text style={[styles.headerTitle, { color: colors.text }]}>
           My Goals
@@ -492,6 +500,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 20,
     marginBottom: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
     shadowColor: '#000',
     shadowOffset: {
       width: 0,

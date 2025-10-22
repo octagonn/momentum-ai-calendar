@@ -129,7 +129,10 @@ class SubscriptionService {
 
   async purchaseSubscription(): Promise<boolean> {
     try {
+      console.log('Purchase attempt - isExpoGoOrWeb:', this.isExpoGoOrWeb);
+      
       if (this.isExpoGoOrWeb) {
+        console.log('Running in Expo Go/Web mode - showing simulation dialog');
         // In Expo Go, simulate the purchase flow for UI testing
         return new Promise((resolve) => {
           Alert.alert(
@@ -161,11 +164,13 @@ class SubscriptionService {
         });
       }
       
+      console.log('Attempting real purchase with SKU:', this.PREMIUM_SKU);
       const result = new Promise<boolean>((resolve, reject) => {
         this.pendingPurchaseResolve = resolve;
         this.pendingPurchaseReject = reject;
       });
       await iapWrapper.requestSubscription({ sku: this.PREMIUM_SKU });
+      console.log('Purchase request sent, waiting for result...');
       return await result;
     } catch (error) {
       console.error('Purchase error:', error);

@@ -14,6 +14,7 @@ import {
   Easing,
   Platform,
   RefreshControl,
+  ImageBackground,
 } from 'react-native';
 import { PanGestureHandler, State } from 'react-native-gesture-handler';
 import { ChevronDown, ChevronLeft, ChevronRight, Calendar as CalendarIcon, Clock, CheckCircle, Circle } from 'lucide-react-native';
@@ -54,7 +55,7 @@ interface Goal {
 }
 
 export default function CalendarScreen() {
-  const { colors, isDark } = useTheme();
+  const { colors, isDark, isGalaxy } = useTheme();
   const { user } = useAuth();
   const insets = useSafeAreaInsets();
   
@@ -859,6 +860,13 @@ export default function CalendarScreen() {
 
   return (
     <View key={refreshKey} style={[styles.container, { backgroundColor: colors.background }]}>
+      {isGalaxy && (
+        <ImageBackground 
+          source={require('@/assets/images/background.png')} 
+          style={StyleSheet.absoluteFillObject} 
+          resizeMode="cover"
+        />
+      )}
       <ScrollView 
         style={styles.scrollContainer}
         showsVerticalScrollIndicator={false}
@@ -954,7 +962,7 @@ export default function CalendarScreen() {
                                 key={dotIndex}
                                 style={[
                                   styles.eventDot,
-                                  { backgroundColor: colors.primary }
+                                  { backgroundColor: isDark ? 'white' : 'black' }
                                 ]}
                               />
                             ))}
@@ -1018,7 +1026,7 @@ export default function CalendarScreen() {
                                   key={dotIndex}
                                   style={[
                                     styles.eventDot,
-                                    { backgroundColor: colors.primary }
+                                    { backgroundColor: isDark ? 'white' : 'black' }
                                   ]}
                                 />
                               ))}
@@ -1100,7 +1108,7 @@ export default function CalendarScreen() {
                                 key={dotIndex}
                                 style={[
                                   styles.eventDot,
-                                  { backgroundColor: colors.primary }
+                                  { backgroundColor: isDark ? 'white' : 'black' }
                                 ]}
                               />
                             ))}
@@ -1343,6 +1351,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     marginBottom: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
   },
   eventContent: {
     flex: 1,

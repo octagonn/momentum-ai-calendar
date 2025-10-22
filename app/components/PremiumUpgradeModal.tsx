@@ -66,9 +66,12 @@ export default function PremiumUpgradeModal({
       return;
     }
     
+    console.log('PremiumUpgradeModal: Starting purchase process...');
     setLoading(true);
     try {
+      console.log('PremiumUpgradeModal: Calling subscriptionService.purchaseSubscription()');
       const success = await subscriptionService.purchaseSubscription();
+      console.log('PremiumUpgradeModal: Purchase result:', success);
       
       if (success) {
         Alert.alert(
@@ -79,9 +82,12 @@ export default function PremiumUpgradeModal({
             onClose();
           }}]
         );
+      } else {
+        Alert.alert('Purchase Failed', 'The subscription could not be completed. Please try again.');
       }
     } catch (error) {
-      console.error('Purchase error:', error);
+      console.error('PremiumUpgradeModal: Purchase error:', error);
+      Alert.alert('Purchase Error', 'An error occurred during the purchase process. Please try again.');
     } finally {
       setLoading(false);
     }
