@@ -7,6 +7,7 @@ import {
   StyleSheet,
   ScrollView,
   Dimensions,
+  ImageBackground,
 } from 'react-native';
 import { X, Clock, Calendar, Target, CheckCircle, Circle } from 'lucide-react-native';
 import { useTheme } from '../../providers/ThemeProvider';
@@ -38,7 +39,7 @@ export default function TaskDetailModal({
   onClose,
   onToggleComplete,
 }: TaskDetailModalProps) {
-  const { colors } = useTheme();
+  const { colors, isGalaxy } = useTheme();
 
   if (!task) return null;
 
@@ -59,7 +60,14 @@ export default function TaskDetailModal({
       presentationStyle="pageSheet"
       onRequestClose={onClose}
     >
-      <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <View style={[styles.container, { backgroundColor: isGalaxy ? 'rgba(0, 0, 0, 0.5)' : colors.background }]}>
+        {isGalaxy && (
+          <ImageBackground 
+            source={require('@/assets/images/background.png')} 
+            style={StyleSheet.absoluteFillObject} 
+            resizeMode="cover"
+          />
+        )}
         {/* Header */}
         <View style={[styles.header, { borderBottomColor: colors.border }]}>
           <TouchableOpacity
@@ -107,7 +115,7 @@ export default function TaskDetailModal({
               <Text style={[styles.sectionTitle, { color: colors.text }]}>
                 Related Goal
               </Text>
-              <View style={[styles.goalContainer, { backgroundColor: colors.surface }]}>
+              <View style={[styles.goalContainer, { backgroundColor: 'rgba(255, 255, 255, 0.1)' }]}>
                 <Target size={20} color={task.goalColor || colors.primary} />
                 <Text style={[styles.goalTitle, { color: task.goalColor || colors.primary }]}>
                   {task.goalTitle}
@@ -121,7 +129,7 @@ export default function TaskDetailModal({
 
             {/* Time */}
             {task.time && (
-              <View style={[styles.detailCard, { backgroundColor: colors.surface }]}>
+              <View style={[styles.detailCard, { backgroundColor: 'rgba(255, 255, 255, 0.1)' }]}>
                 <Clock size={20} color={colors.primary} />
                 <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>
                   Time
@@ -134,7 +142,7 @@ export default function TaskDetailModal({
 
             {/* Duration */}
             {task.estimated_duration && (
-              <View style={[styles.detailCard, { backgroundColor: colors.surface }]}>
+              <View style={[styles.detailCard, { backgroundColor: 'rgba(255, 255, 255, 0.1)' }]}>
                 <Calendar size={20} color={colors.primary} />
                 <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>
                   Duration

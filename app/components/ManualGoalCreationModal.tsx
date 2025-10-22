@@ -11,6 +11,7 @@ import {
   Platform,
   ActivityIndicator,
   Alert,
+  ImageBackground,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { X, Save, Calendar, Target, Lock } from 'lucide-react-native';
@@ -35,7 +36,7 @@ export default function ManualGoalCreationModal({
   onClose, 
   onGoalCreated 
 }: ManualGoalCreationModalProps) {
-  const { colors, isDark } = useTheme();
+  const { colors, isDark, isGalaxy } = useTheme();
   const { user } = useAuth();
   const { user: userProfile } = useUser();
   const { isPremium: subscriptionPremium, showUpgradeModal } = useSubscription();
@@ -152,9 +153,16 @@ export default function ManualGoalCreationModal({
       onRequestClose={handleClose}
     >
       <KeyboardAvoidingView 
-        style={[styles.container, { backgroundColor: colors.background }]}
+        style={[styles.container, { backgroundColor: isGalaxy ? 'rgba(0, 0, 0, 0.5)' : colors.background }]}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
+        {isGalaxy && (
+          <ImageBackground 
+            source={require('@/assets/images/background.png')} 
+            style={StyleSheet.absoluteFillObject} 
+            resizeMode="cover"
+          />
+        )}
         {/* Header */}
         <View style={[styles.header, { borderBottomColor: colors.border }]}>
           <View style={styles.headerContent}>
@@ -174,7 +182,7 @@ export default function ManualGoalCreationModal({
             <Text style={[styles.label, { color: colors.text }]}>Title *</Text>
             <TextInput
               style={[styles.input, { 
-                backgroundColor: colors.surface, 
+                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(255, 255, 255, 0.8)', 
                 color: colors.text,
                 borderColor: colors.border 
               }]}
@@ -191,7 +199,7 @@ export default function ManualGoalCreationModal({
             <Text style={[styles.label, { color: colors.text }]}>Description</Text>
             <TextInput
               style={[styles.textArea, { 
-                backgroundColor: colors.surface, 
+                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(255, 255, 255, 0.8)', 
                 color: colors.text,
                 borderColor: colors.border 
               }]}

@@ -8,6 +8,8 @@ import {
   Platform,
   Dimensions,
   StatusBar,
+  RefreshControl,
+  ImageBackground,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Check, Calendar, Clock, TrendingUp, Award, ChevronRight } from "lucide-react-native";
@@ -23,7 +25,7 @@ import ViewAllTasksModal from "@/app/components/ViewAllTasksModal";
 
 
 export default function HomeScreen() {
-  const { colors, isDark } = useTheme();
+  const { colors, isDark, isGalaxy } = useTheme();
   const insets = useSafeAreaInsets();
 
   const { user } = useUser();
@@ -440,7 +442,7 @@ export default function HomeScreen() {
       marginLeft: 6,
     },
     progressSection: {
-      marginTop: -80,
+      marginTop: 0,
       paddingHorizontal: 20,
       zIndex: 10,
       position: 'relative',
@@ -456,7 +458,7 @@ export default function HomeScreen() {
       marginBottom: 16,
       borderRadius: 24,
       padding: 20,
-      backgroundColor: colors.card,
+      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(255, 255, 255, 0.8)',
       shadowColor: isDark ? 'rgba(0, 0, 0, 0.5)' : 'rgba(0, 0, 0, 0.1)',
       shadowOffset: { width: 0, height: 8 },
       shadowOpacity: 0.3,
@@ -524,7 +526,7 @@ export default function HomeScreen() {
       marginHorizontal: 20,
     },
     taskCard: {
-      backgroundColor: colors.card,
+      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(255, 255, 255, 0.8)',
       borderRadius: 24,
       padding: 20,
       marginBottom: 16,
@@ -636,7 +638,7 @@ export default function HomeScreen() {
       paddingHorizontal: 20,
     },
     upcomingCard: {
-      backgroundColor: colors.card,
+      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(255, 255, 255, 0.8)',
       borderRadius: 24,
       padding: 20,
       marginBottom: 16,
@@ -681,7 +683,7 @@ export default function HomeScreen() {
       lineHeight: 18,
     },
     motivationalSection: {
-      backgroundColor: colors.card,
+      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(255, 255, 255, 0.8)',
       borderRadius: 20,
       padding: 20,
       marginHorizontal: 20,
@@ -721,12 +723,32 @@ export default function HomeScreen() {
     return today.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
   };
 
+  const [refreshing, setRefreshing] = useState(false);
+
+  const onRefresh = async () => {
+    try {
+      setRefreshing(true);
+      // GoalsProvider already has realtime, but we can trigger a refetch through Goals screen patterns by navigating or by explicit provider call if exposed
+      // Here we simply re-render current computations; data will refresh via providers' listeners/polling
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
   return (
     <View style={styles.container} testID="home-screen">
+      {isGalaxy && (
+        <ImageBackground 
+          source={require('@/assets/images/background.png')} 
+          style={StyleSheet.absoluteFillObject} 
+          resizeMode="cover"
+        />
+      )}
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
       <Animated.ScrollView 
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         onScroll={Animated.event(
           [{ nativeEvent: { contentOffset: { y: scrollY } } }],
           { useNativeDriver: false }
