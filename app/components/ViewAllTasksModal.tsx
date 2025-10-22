@@ -8,6 +8,7 @@ import {
   StyleSheet,
   Platform,
   Dimensions,
+  ImageBackground,
 } from 'react-native';
 import { X, Filter, ArrowUpDown, Clock, CheckCircle, Circle, ChevronDown } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
@@ -26,7 +27,7 @@ type SortType = 'date-asc' | 'date-desc' | 'title-asc' | 'title-desc' | 'goal-as
 const { width } = Dimensions.get('window');
 
 export default function ViewAllTasksModal({ visible, onClose }: ViewAllTasksModalProps) {
-  const { colors, isDark } = useTheme();
+  const { colors, isDark, isGalaxy } = useTheme();
   const { tasks, goals, toggleTask } = useGoals();
   const [selectedFilter, setSelectedFilter] = useState<FilterType>('incomplete');
   const [selectedSort, setSelectedSort] = useState<SortType>('date-asc');
@@ -177,7 +178,7 @@ export default function ViewAllTasksModal({ visible, onClose }: ViewAllTasksModa
       style={[
         styles.taskItem,
         {
-          backgroundColor: colors.card,
+          backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(255, 255, 255, 0.8)',
           borderLeftColor: task.goalColor,
         }
       ]}
@@ -289,7 +290,7 @@ export default function ViewAllTasksModal({ visible, onClose }: ViewAllTasksModa
       justifyContent: 'flex-end',
     },
     modalContainer: {
-      backgroundColor: colors.background,
+      backgroundColor: isGalaxy ? 'rgba(0, 0, 0, 0.5)' : colors.background,
       borderTopLeftRadius: 24,
       borderTopRightRadius: 24,
       height: '95%',
@@ -470,6 +471,13 @@ export default function ViewAllTasksModal({ visible, onClose }: ViewAllTasksModa
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContainer}>
+            {isGalaxy && (
+              <ImageBackground 
+                source={require('@/assets/images/background.png')} 
+                style={StyleSheet.absoluteFillObject} 
+                resizeMode="cover"
+              />
+            )}
             <View style={styles.header}>
               <Text style={styles.headerTitle}>All Tasks</Text>
               <TouchableOpacity

@@ -13,9 +13,10 @@ import {
   Modal,
   Alert,
   ActivityIndicator,
+  ImageBackground,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
-import { Crown, Shield, FileText, X, Lock } from "lucide-react-native";
+import { Crown, Shield, FileText, X, Lock, Sun, Moon, Monitor, Sparkles } from "lucide-react-native";
 import * as Haptics from "expo-haptics";
 import { useTheme } from "@/providers/ThemeProvider";
 import { useUser } from "@/providers/UserProvider";
@@ -28,7 +29,7 @@ import { subscriptionService } from "@/services/subscriptionService";
 import SubscriptionManagementModal from "@/app/components/SubscriptionManagementModal";
 
 export default function SettingsScreen() {
-  const { colors, isDark, themeMode, setThemeMode } = useTheme();
+  const { colors, isDark, isGalaxy, themeMode, setThemeMode } = useTheme();
   const { user, updateUser } = useUser();
   const { signOut } = useAuth();
   const { isPremium, subscriptionTier, showUpgradeModal } = useSubscription();
@@ -336,7 +337,7 @@ export default function SettingsScreen() {
       color: colors.primary,
     },
     section: {
-      backgroundColor: colors.card,
+      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(255, 255, 255, 0.8)',
       marginHorizontal: 20,
       marginBottom: 16,
       borderRadius: 24,
@@ -436,7 +437,7 @@ export default function SettingsScreen() {
       alignItems: 'center',
     },
     modalContainer: {
-      backgroundColor: colors.card,
+      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(255, 255, 255, 0.8)',
       borderRadius: 24,
       margin: 20,
       maxHeight: '80%',
@@ -516,6 +517,11 @@ export default function SettingsScreen() {
       borderWidth: 2,
       backgroundColor: isDark ? 'rgba(99, 102, 241, 0.1)' : 'rgba(99, 102, 241, 0.05)',
     },
+    themeOptionContent: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
     themeOptionText: {
       fontSize: 14,
       fontWeight: '600' as const,
@@ -533,6 +539,13 @@ export default function SettingsScreen() {
 
   return (
     <View style={styles.container} testID="settings-screen">
+      {isGalaxy && (
+        <ImageBackground 
+          source={require('@/assets/images/background.png')} 
+          style={StyleSheet.absoluteFillObject} 
+          resizeMode="cover"
+        />
+      )}
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
       
       <Animated.View style={styles.headerContainer}>
@@ -779,12 +792,15 @@ export default function SettingsScreen() {
                   setThemeMode('light');
                 }}
               >
-                <Text style={[
-                  styles.themeOptionText,
-                  { color: themeMode === 'light' ? colors.primary : colors.text }
-                ]}>
-                  ☀️ Light
-                </Text>
+                <View style={styles.themeOptionContent}>
+                  <Sun size={20} color={themeMode === 'light' ? colors.primary : colors.text} />
+                  <Text style={[
+                    styles.themeOptionText,
+                    { color: themeMode === 'light' ? colors.primary : colors.text }
+                  ]}>
+                    Light
+                  </Text>
+                </View>
               </TouchableOpacity>
               
               <TouchableOpacity
@@ -799,12 +815,38 @@ export default function SettingsScreen() {
                   setThemeMode('dark');
                 }}
               >
-                <Text style={[
-                  styles.themeOptionText,
-                  { color: themeMode === 'dark' ? colors.primary : colors.text }
-                ]}>
-                  🌙 Dark
-                </Text>
+                <View style={styles.themeOptionContent}>
+                  <Moon size={20} color={themeMode === 'dark' ? colors.primary : colors.text} />
+                  <Text style={[
+                    styles.themeOptionText,
+                    { color: themeMode === 'dark' ? colors.primary : colors.text }
+                  ]}>
+                    Dark
+                  </Text>
+                </View>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={[
+                  styles.themeOption,
+                  themeMode === 'galaxy' && [styles.themeOptionActive, { borderColor: colors.primary }]
+                ]}
+                onPress={async () => {
+                  if (Platform.OS !== "web") {
+                    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  }
+                  setThemeMode('galaxy');
+                }}
+              >
+                <View style={styles.themeOptionContent}>
+                  <Sparkles size={20} color={themeMode === 'galaxy' ? colors.primary : colors.text} />
+                  <Text style={[
+                    styles.themeOptionText,
+                    { color: themeMode === 'galaxy' ? colors.primary : colors.text }
+                  ]}>
+                    Galaxy
+                  </Text>
+                </View>
               </TouchableOpacity>
               
               <TouchableOpacity
@@ -819,12 +861,15 @@ export default function SettingsScreen() {
                   setThemeMode('system');
                 }}
               >
-                <Text style={[
-                  styles.themeOptionText,
-                  { color: themeMode === 'system' ? colors.primary : colors.text }
-                ]}>
-                  📱 System
-                </Text>
+                <View style={styles.themeOptionContent}>
+                  <Monitor size={20} color={themeMode === 'system' ? colors.primary : colors.text} />
+                  <Text style={[
+                    styles.themeOptionText,
+                    { color: themeMode === 'system' ? colors.primary : colors.text }
+                  ]}>
+                    System
+                  </Text>
+                </View>
               </TouchableOpacity>
             </View>
           </View>

@@ -2,7 +2,18 @@ import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 
 // Check if we're in Expo Go or web
+// In production builds (including TestFlight), appOwnership should be 'store' or 'standalone'
 const isExpoGoOrWeb = Platform.OS === 'web' || (Constants?.appOwnership === 'expo');
+
+// Debug logging for production builds
+if (__DEV__) {
+  console.log('IAP Debug Info:', {
+    platform: Platform.OS,
+    appOwnership: Constants?.appOwnership,
+    isExpoGoOrWeb,
+    hasRNIap: !!RNIap
+  });
+}
 
 // Mock types for when IAP is not available
 export interface MockSubscription {
@@ -72,9 +83,15 @@ export const iapWrapper = {
   },
 
   async requestSubscription(options: { sku: string }) {
+    console.log('IAP requestSubscription called with:', options);
+    console.log('isExpoGoOrWeb:', isExpoGoOrWeb, 'RNIap available:', !!RNIap);
+    
     if (isExpoGoOrWeb || !RNIap) {
+      console.error('IAP not available - isExpoGoOrWeb:', isExpoGoOrWeb, 'RNIap:', !!RNIap);
       throw new Error('IAP not available in Expo Go/Web');
     }
+    
+    console.log('Calling RNIap.requestSubscription...');
     return RNIap.requestSubscription(options);
   },
 
