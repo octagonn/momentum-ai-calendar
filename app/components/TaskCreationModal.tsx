@@ -41,7 +41,14 @@ export default function TaskCreationModal({
   
   const [title, setTitle] = useState('');
   const [notes, setNotes] = useState('');
-  const [dueDate, setDueDate] = useState('');
+  const [dueDate, setDueDate] = useState(() => {
+    // Initialize with today's date
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const day = String(today.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  });
   const [dueTime, setDueTime] = useState('09:00');
   const [durationMinutes, setDurationMinutes] = useState('');
   const [loading, setLoading] = useState(false);
@@ -51,7 +58,12 @@ export default function TaskCreationModal({
   const resetForm = () => {
     setTitle('');
     setNotes('');
-    setDueDate('');
+    // Set default date to today
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const day = String(today.getDate()).padStart(2, '0');
+    setDueDate(`${year}-${month}-${day}`);
     setDueTime('09:00');
     setDurationMinutes('');
     setShowDatePicker(false);
@@ -61,6 +73,7 @@ export default function TaskCreationModal({
   // Reset form when modal opens
   useEffect(() => {
     if (visible) {
+      console.log('TaskCreationModal opened, resetting form');
       resetForm();
     }
   }, [visible]);
@@ -85,8 +98,8 @@ export default function TaskCreationModal({
 
     setLoading(true);
     try {
-      // Combine date and time
-      const combinedDateTime = `${dueDate}T${dueTime}:00.000Z`;
+      // Combine date and time - use local timezone to avoid date shifting
+      const combinedDateTime = `${dueDate}T${dueTime}:00`;
       const dueAt = new Date(combinedDateTime).toISOString();
 
       const taskData = {
@@ -112,6 +125,7 @@ export default function TaskCreationModal({
       }
 
       console.log('Task created:', task);
+      console.log('Final due date saved:', dueAt);
       onTaskCreated(task);
       onClose();
       resetForm();
@@ -135,7 +149,9 @@ export default function TaskCreationModal({
       const year = selectedDate.getFullYear();
       const month = String(selectedDate.getMonth() + 1).padStart(2, '0');
       const day = String(selectedDate.getDate()).padStart(2, '0');
-      setDueDate(`${year}-${month}-${day}`);
+      const dateString = `${year}-${month}-${day}`;
+      console.log('Date selected:', dateString);
+      setDueDate(dateString);
     }
   };
 
@@ -208,7 +224,10 @@ export default function TaskCreationModal({
                 borderColor: colors.border 
               }]}
               value={title}
-              onChangeText={setTitle}
+              onChangeText={(text) => {
+                console.log('Title changed:', text);
+                setTitle(text);
+              }}
               placeholder="Enter task title"
               placeholderTextColor={colors.textSecondary}
               maxLength={100}
@@ -248,7 +267,7 @@ export default function TaskCreationModal({
             </TouchableOpacity>
             {showDatePicker && (
               <DateTimePicker
-                value={dueDate ? new Date(dueDate) : new Date()}
+                value={dueDate ? new Date(dueDate + 'T12:00:00') : new Date()}
                 mode="date"
                 display={Platform.OS === 'ios' ? 'spinner' : 'default'}
                 onChange={handleDateChange}
@@ -298,6 +317,7 @@ export default function TaskCreationModal({
               Leave empty for no specific duration
             </Text>
           </View>
+
         </ScrollView>
 
         {/* Footer */}
@@ -312,9 +332,20 @@ export default function TaskCreationModal({
             </Text>
           </TouchableOpacity>
           <TouchableOpacity 
-            style={[styles.saveButton, { backgroundColor: colors.primary }]}
+            style={[
+              styles.saveButton, 
+              { 
+                backgroundColor: (loading || !title.trim() || !dueDate) ? colors.textSecondary : colors.primary,
+                opacity: (loading || !title.trim() || !dueDate) ? 0.5 : 1
+              }
+            ]}
             onPress={() => {
-              console.log('Save button pressed, disabled state:', { loading, title: title.trim(), dueDate });
+              console.log('Save button pressed, disabled state:', { 
+                loading, 
+                title: title.trim(), 
+                dueDate,
+                disabled: loading || !title.trim() || !dueDate 
+              });
               handleSave();
             }}
             disabled={loading || !title.trim() || !dueDate}

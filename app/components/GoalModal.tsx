@@ -17,6 +17,7 @@ import { useAuth } from '../../providers/AuthProvider';
 import { supabase } from '../../lib/supabase-client';
 // GoalEditModal is now rendered at a higher level to avoid nested modals
 import TaskEditModal from './TaskEditModal';
+import TaskViewModal from './TaskViewModal';
 
 interface Task {
   id: string;
@@ -61,6 +62,7 @@ export default function GoalModal({ visible, goal, onClose, onTaskToggle, onGoal
   const [loading, setLoading] = useState(false);
   // Edit modal moved to parent to prevent nested native Modal stacking
   const [showTaskEditModal, setShowTaskEditModal] = useState(false);
+  const [showTaskViewModal, setShowTaskViewModal] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [currentGoal, setCurrentGoal] = useState<Goal | null>(goal);
   
@@ -220,12 +222,13 @@ export default function GoalModal({ visible, goal, onClose, onTaskToggle, onGoal
 
   const handleTaskPress = (task: Task) => {
     setSelectedTask(task);
-    setShowTaskEditModal(true);
+    setShowTaskViewModal(true);
   };
 
   const handleTaskUpdated = (updatedTask: Task) => {
     setTasks(prev => prev.map(t => t.id === updatedTask.id ? updatedTask : t));
     setShowTaskEditModal(false);
+    setShowTaskViewModal(false);
     setSelectedTask(null);
     // Refresh goal data to update completion ratios
     if (onGoalUpdatedRef.current && currentGoal) {
@@ -236,6 +239,7 @@ export default function GoalModal({ visible, goal, onClose, onTaskToggle, onGoal
   const handleTaskDeleted = (taskId: string) => {
     setTasks(prev => prev.filter(t => t.id !== taskId));
     setShowTaskEditModal(false);
+    setShowTaskViewModal(false);
     setSelectedTask(null);
     // Refresh goal data to update completion ratios
     if (onGoalUpdatedRef.current && currentGoal) {
@@ -376,7 +380,6 @@ export default function GoalModal({ visible, goal, onClose, onTaskToggle, onGoal
                       key={task.id}
                       task={task}
                       onToggle={handleTaskToggle}
-                      onEdit={handleEditTask}
                       onPress={handleTaskPress}
                       colors={colors}
                       isDark={isDark}
@@ -398,7 +401,6 @@ export default function GoalModal({ visible, goal, onClose, onTaskToggle, onGoal
                       key={task.id}
                       task={task}
                       onToggle={handleTaskToggle}
-                      onEdit={handleEditTask}
                       onPress={handleTaskPress}
                       colors={colors}
                       isDark={isDark}
@@ -428,6 +430,19 @@ export default function GoalModal({ visible, goal, onClose, onTaskToggle, onGoal
 
       {/* Edit Modals moved to parent to avoid nested modal stacking */}
 
+      <TaskViewModal
+        visible={showTaskViewModal}
+        task={selectedTask}
+        onClose={() => setShowTaskViewModal(false)}
+        onEdit={(task) => {
+          setShowTaskViewModal(false);
+          setSelectedTask(task);
+          setShowTaskEditModal(true);
+        }}
+        onTaskUpdated={handleTaskUpdated}
+        onTaskDeleted={handleTaskDeleted}
+      />
+
       <TaskEditModal
         visible={showTaskEditModal}
         task={selectedTask}
@@ -442,7 +457,6 @@ export default function GoalModal({ visible, goal, onClose, onTaskToggle, onGoal
 interface TaskItemProps {
   task: Task;
   onToggle: (task: Task) => void;
-  onEdit: (task: Task) => void;
   onPress: (task: Task) => void;
   colors: any;
   isDark: boolean;
@@ -451,7 +465,7 @@ interface TaskItemProps {
   getDurationText: (minutes?: number) => string;
 }
 
-function TaskItem({ task, onToggle, onEdit, onPress, colors, isDark, formatDate, formatTime, getDurationText }: TaskItemProps) {
+function TaskItem({ task, onToggle, onPress, colors, isDark, formatDate, formatTime, getDurationText }: TaskItemProps) {
   const isCompleted = task.status === 'done';
   
   return (
@@ -491,12 +505,6 @@ function TaskItem({ task, onToggle, onEdit, onPress, colors, isDark, formatDate,
               {task.title}
             </Text>
           </View>
-          <TouchableOpacity
-            style={styles.taskEditButton}
-            onPress={() => onEdit(task)}
-          >
-            <Edit3 size={16} color={colors.primary} />
-          </TouchableOpacity>
         </View>
 
         {task.notes && (
@@ -693,9 +701,6 @@ const styles = StyleSheet.create({
   editButton: {
     padding: 8,
     marginRight: 8,
-  },
-  taskEditButton: {
-    padding: 4,
   },
   checkboxContainer: {
     padding: 4,

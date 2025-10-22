@@ -117,11 +117,20 @@ export default function HomeScreen() {
   };
 
   // Compute tasks - these will re-compute when tasks or goals change
-  const todaysTasksFromGoals = useMemo(() => getTodaysTasksFromGoals(), [goals]);
-  const todaysDatabaseTasks = useMemo(() => getTodaysDatabaseTasks(), [tasks, goals]);
+  const todaysTasksFromGoals = useMemo(() => {
+    const result = getTodaysTasksFromGoals();
+    console.log('Homepage: todaysTasksFromGoals updated:', result.length);
+    return result;
+  }, [goals]);
+  const todaysDatabaseTasks = useMemo(() => {
+    const result = getTodaysDatabaseTasks();
+    console.log('Homepage: todaysDatabaseTasks updated:', result.length, 'from', tasks.length, 'total tasks');
+    return result;
+  }, [tasks, goals]);
   
   // Combine both goal-generated tasks and database tasks
   const allTodaysTasks = [...todaysTasksFromGoals, ...todaysDatabaseTasks];
+  console.log('Homepage: allTodaysTasks total:', allTodaysTasks.length);
   
   const [animatedValues, setAnimatedValues] = useState<Animated.Value[]>([]);
   const [selectedTask, setSelectedTask] = useState<any>(null);

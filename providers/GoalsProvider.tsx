@@ -146,20 +146,29 @@ export const [GoalsProvider, useGoals] = createContextHook<GoalsContextType>(() 
           }, 
           (payload) => {
             console.log('Tasks table changed:', payload);
+            console.log('Current local tasks count before update:', localTasks.length);
             
             // Update local state immediately for better UX
             if (payload.eventType === 'UPDATE' && payload.new) {
-              setLocalTasks(prevTasks => 
-                prevTasks.map(task => 
+              setLocalTasks(prevTasks => {
+                const updated = prevTasks.map(task => 
                   task.id === payload.new.id ? { ...task, ...payload.new } : task
-                )
-              );
+                );
+                console.log('Updated tasks after UPDATE:', updated.length);
+                return updated;
+              });
             } else if (payload.eventType === 'INSERT' && payload.new) {
-              setLocalTasks(prevTasks => [...prevTasks, payload.new]);
+              setLocalTasks(prevTasks => {
+                const updated = [...prevTasks, payload.new];
+                console.log('Updated tasks after INSERT:', updated.length);
+                return updated;
+              });
             } else if (payload.eventType === 'DELETE' && payload.old) {
-              setLocalTasks(prevTasks => 
-                prevTasks.filter(task => task.id !== payload.old.id)
-              );
+              setLocalTasks(prevTasks => {
+                const updated = prevTasks.filter(task => task.id !== payload.old.id);
+                console.log('Updated tasks after DELETE:', updated.length);
+                return updated;
+              });
             }
             
             // Also refresh from database to ensure data consistency
