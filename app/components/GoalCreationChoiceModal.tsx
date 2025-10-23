@@ -7,7 +7,8 @@ import {
   TouchableOpacity,
   Alert,
 } from 'react-native';
-import { X, Bot, Edit3, Sparkles, Target, Lock } from 'lucide-react-native';
+import { X, Edit3, Sparkles, Target, Lock } from 'lucide-react-native';
+import { Image } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../providers/ThemeProvider';
 import { useUser } from '../../providers/UserProvider';
@@ -79,8 +80,8 @@ export default function GoalCreationChoiceModal({
               }}
               activeOpacity={0.7}
             >
-              <View style={[styles.optionIcon, { backgroundColor: `${colors.primary}15` }]}>
-                <Bot size={24} color={colors.primary} />
+              <View style={[styles.optionIcon, { backgroundColor: `${colors.primary}15` }]}> 
+                <Image source={require('@/assets/images/ai-chat-icon.png')} style={{ width: 28, height: 28 }} resizeMode="contain" />
               </View>
               <View style={styles.optionContent}>
                 <Text style={[styles.optionTitle, { color: colors.text }]}>

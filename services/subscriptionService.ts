@@ -1,7 +1,7 @@
 import { Platform, Alert } from 'react-native';
 import Constants from 'expo-constants';
 import { supabase } from '@/lib/supabase-client';
-import { iapWrapper, Subscription, Purchase, PurchaseUpdatedListener, PurchaseErrorListener } from '@/lib/iap-wrapper';
+import { iapWrapper, Subscription, Purchase, PurchaseUpdatedListener, PurchaseErrorListener, isIapAvailable, iapEnvironment } from '@/lib/iap-wrapper';
 
 export type SubscriptionTier = 'free' | 'premium' | 'family';
 export type SubscriptionStatus = 'active' | 'expired' | 'cancelled' | 'trialing';
@@ -19,9 +19,10 @@ class SubscriptionService {
   private static instance: SubscriptionService;
   private initialized = false;
   private currentUserId: string | null = null;
-  private readonly isExpoGoOrWeb = Platform.OS === 'web' || (Constants?.appOwnership === 'expo');
-  private purchaseUpdateSub: PurchaseUpdatedListener | null = null;
-  private purchaseErrorSub: PurchaseErrorListener | null = null;
+  // Treat IAP as available if native module exists; this works on TestFlight/App Store
+  private readonly isWeb = Platform.OS === 'web';
+  private purchaseUpdateSub: { remove: () => void } | null = null;
+  private purchaseErrorSub: { remove: () => void } | null = null;
   private pendingPurchaseResolve: ((value: boolean) => void) | null = null;
   private pendingPurchaseReject: ((reason?: any) => void) | null = null;
 
@@ -43,8 +44,8 @@ class SubscriptionService {
     }
 
     try {
-      if (this.isExpoGoOrWeb) {
-        console.log('Expo Go/Web detected. Skipping native IAP init. Use a Dev Build to test purchases.');
+      if (!isIapAvailable || this.isWeb) {
+        console.log('IAP unavailable (Expo Go/Web or missing native module). Skipping native init.');
         this.currentUserId = userId;
         this.initialized = true;
         return;
@@ -63,7 +64,7 @@ class SubscriptionService {
       await this.syncSubscriptionStatus();
     } catch (error) {
       console.error('Failed to initialize IAP:', error);
-      if (!this.isExpoGoOrWeb) throw error;
+      if (isIapAvailable) throw error;
     }
   }
 
@@ -105,7 +106,7 @@ class SubscriptionService {
 
   async getSubscriptions(): Promise<Subscription[]> {
     try {
-      if (this.isExpoGoOrWeb) {
+      if (!isIapAvailable || this.isWeb) {
         console.log('getSubscriptions: Providing mock subscriptions for Expo Go/Web testing');
         // Provide mock subscriptions for testing in Expo Go
         return [
@@ -129,9 +130,9 @@ class SubscriptionService {
 
   async purchaseSubscription(): Promise<boolean> {
     try {
-      console.log('Purchase attempt - isExpoGoOrWeb:', this.isExpoGoOrWeb);
+      console.log('Purchase attempt - iap env:', iapEnvironment);
       
-      if (this.isExpoGoOrWeb) {
+      if (!isIapAvailable || this.isWeb) {
         console.log('Running in Expo Go/Web mode - showing simulation dialog');
         // In Expo Go, simulate the purchase flow for UI testing
         return new Promise((resolve) => {
@@ -187,7 +188,8 @@ class SubscriptionService {
     // Update user profile to premium in Supabase
     // Try to update premium fields, but handle gracefully if they don't exist yet
     try {
-      const { error } = await supabase
+      const supa = supabase as any;
+      const { error } = await supa
         .from('user_profiles')
         .update({
           subscription_tier: 'premium',
@@ -209,7 +211,8 @@ class SubscriptionService {
 
     // Also update auth.users metadata for premium status
     try {
-      const { error: authError } = await supabase.auth.updateUser({
+      const supa = supabase as any;
+      const { error: authError } = await supa.auth.updateUser({
         data: {
           subscription_tier: 'premium',
           subscription_status: 'active',
@@ -230,16 +233,9 @@ class SubscriptionService {
     console.log('Successfully simulated premium upgrade for user:', this.currentUserId);
   }
 
-  formatPrice(subscription: Subscription): string {
-    if (this.isExpoGoOrWeb) {
-      return '$4.99/month after 7-day free trial';
-    }
-    return subscription.localizedPrice || subscription.price || '$4.99/month';
-  }
-
   async restorePurchases(): Promise<boolean> {
     try {
-      if (this.isExpoGoOrWeb) {
+      if (!isIapAvailable || this.isWeb) {
         // In Expo Go, provide testing options for restore flow
         return new Promise((resolve) => {
           Alert.alert(
@@ -272,8 +268,8 @@ class SubscriptionService {
       const purchases = await iapWrapper.getAvailablePurchases();
       // Find latest iOS receipt among matching product id
       const latest = purchases
-        .filter(p => p.productId === this.PREMIUM_SKU)
-        .sort((a, b) => (Number(b.transactionDate) || 0) - (Number(a.transactionDate) || 0))[0];
+        .filter((p: any) => p.productId === this.PREMIUM_SKU)
+        .sort((a: any, b: any) => (Number(b.transactionDate) || 0) - (Number(a.transactionDate) || 0))[0];
 
       if (latest?.transactionReceipt) {
         const verified = await this.verifyAndApplyEntitlement(latest.transactionReceipt);
@@ -292,15 +288,15 @@ class SubscriptionService {
 
   async getSubscriptionInfo(): Promise<SubscriptionInfo> {
     try {
-      if (this.isExpoGoOrWeb) {
+      if (!isIapAvailable || this.isWeb) {
         // In Expo Go / Web, default to free tier
         return { tier: 'free', status: 'active', isActive: false };
       }
       // Fetch latest available purchases and verify
       const purchases = await iapWrapper.getAvailablePurchases();
       const latest = purchases
-        .filter(p => p.productId === this.PREMIUM_SKU)
-        .sort((a, b) => (Number(b.transactionDate) || 0) - (Number(a.transactionDate) || 0))[0];
+        .filter((p: any) => p.productId === this.PREMIUM_SKU)
+        .sort((a: any, b: any) => (Number(b.transactionDate) || 0) - (Number(a.transactionDate) || 0))[0];
       if (latest?.transactionReceipt) {
         const entitlement = await this.verifyReceipt(latest.transactionReceipt);
         return this.entitlementToSubscriptionInfo(entitlement);
@@ -334,11 +330,12 @@ class SubscriptionService {
     if (!this.currentUserId) return;
 
     try {
-      if (this.isExpoGoOrWeb) return;
+      if (!isIapAvailable || this.isWeb) return;
       const subInfo = await this.getSubscriptionInfo();
 
       // Update user profile with subscription info
-      const { error: updateError } = await supabase
+      const supa = supabase as any;
+      const { error: updateError } = await supa
         .from('user_profiles')
         .update({
           subscription_tier: subInfo.tier,
@@ -368,7 +365,8 @@ class SubscriptionService {
     if (!this.currentUserId) return;
 
     try {
-      const { error } = await supabase
+      const supa = supabase as any;
+      const { error } = await supa
         .from('subscriptions')
         .insert({
           user_id: this.currentUserId,
@@ -421,11 +419,11 @@ class SubscriptionService {
 
   async cleanup(): Promise<void> {
     try {
-      this.purchaseUpdateSub?.remove();
-      this.purchaseErrorSub?.remove();
+      this.purchaseUpdateSub?.remove?.();
+      this.purchaseErrorSub?.remove?.();
       this.purchaseUpdateSub = null;
       this.purchaseErrorSub = null;
-      if (this.initialized && !this.isExpoGoOrWeb) {
+      if (this.initialized && isIapAvailable && !this.isWeb) {
         await iapWrapper.endConnection();
       }
       this.initialized = false;
@@ -439,7 +437,8 @@ class SubscriptionService {
     const info = this.entitlementToSubscriptionInfo(entitlement);
     // Update DB
     if (this.currentUserId) {
-      await supabase
+      const supa = supabase as any;
+      await supa
         .from('user_profiles')
         .update({
           subscription_tier: info.tier,

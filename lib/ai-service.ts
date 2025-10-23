@@ -1,4 +1,7 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { parseDayExpression, parseDayTimes, DayOfWeek } from './ai/dayParser';
+import { buildScheduleWithDayTimes } from './ai/scheduler';
+import { parseTargetDateFromText, toISODateString } from './ai/dateParser';
 
 // Initialize Gemini AI
 const genAI = new GoogleGenerativeAI(process.env.EXPO_PUBLIC_GEMINI_API_KEY || '');
@@ -19,6 +22,7 @@ export interface AIResponse {
 
 class AIService {
   private model: any;
+  private proModel: any;
   private conversationState: Map<string, string> = new Map();
 
   constructor() {
@@ -33,6 +37,106 @@ class AIService {
       console.warn('❌ Gemini AI not initialized:', error);
       this.model = null;
     }
+
+    // Initialize Gemini Pro for higher quality plan generation
+    try {
+      this.proModel = genAI.getGenerativeModel({ model: "gemini-2.0-pro" });
+      console.log('✅ Gemini PRO model initialized successfully');
+    } catch (error) {
+      console.warn('❌ Gemini PRO not initialized:', error);
+      this.proModel = null;
+    }
+  }
+
+  private extractSchedulingPreferences(conversationHistory: Array<{role: string, content: string}>): {
+    preferredDays: DayOfWeek[];
+    dayTimes: Partial<Record<DayOfWeek, string>>;
+    sessionMinutes: number;
+    targetDate: Date | null;
+  } {
+    const allText = conversationHistory.map(m => m.content).join('\n');
+    let preferredDays: DayOfWeek[] = [];
+    let dayTimes: Partial<Record<DayOfWeek, string>> = {};
+    let globalTime: string | null = null;
+    let weeklyMinutes: number | null = null;
+    let sessionMinutes = 60;
+    let targetDate: Date | null = null;
+
+    // Scan messages last-to-first to favor latest inputs
+    for (let i = conversationHistory.length - 1; i >= 0; i--) {
+      const msg = conversationHistory[i].content;
+      if (!preferredDays.length) {
+        const days = parseDayExpression(msg);
+        if (days.length) preferredDays = days as DayOfWeek[];
+      }
+      if (Object.keys(dayTimes).length === 0) {
+        const map = parseDayTimes(msg);
+        if (Object.keys(map).length) dayTimes = map;
+      }
+      if (!targetDate) {
+        const d = parseTargetDateFromText(msg);
+        if (d) targetDate = d;
+      }
+      if (weeklyMinutes == null) {
+        // e.g., "6 hours per week", "6h/week"
+        const hrs = msg.match(/(\d+(?:\.\d+)?)\s*(hours|hour|hrs|hr|h)\s*(?:per|\/)?\s*week/i);
+        if (hrs) {
+          const hoursNum = parseFloat(hrs[1]);
+          weeklyMinutes = Math.round(hoursNum * 60);
+        }
+      }
+      if (!globalTime) {
+        const t = this.parseAnyTime(msg);
+        if (t) globalTime = t;
+      }
+    }
+
+    // If we have a global time and no per-day entries, propagate to all preferred days
+    if (globalTime) {
+      const daysToFill: DayOfWeek[] = preferredDays.length ? preferredDays : (Object.keys(dayTimes) as DayOfWeek[]);
+      for (const d of daysToFill) {
+        if (!dayTimes[d]) dayTimes[d] = globalTime;
+      }
+    }
+
+    // If still no preferredDays but we have dayTimes, infer from keys
+    if (!preferredDays.length && Object.keys(dayTimes).length) {
+      preferredDays = Object.keys(dayTimes) as DayOfWeek[];
+    }
+
+    // Fallback preferred days if none provided
+    if (!preferredDays.length) {
+      preferredDays = ['Mon','Wed','Fri'];
+    }
+
+    // Determine session minutes
+    if (weeklyMinutes != null) {
+      const daysPerWeek = preferredDays.length;
+      if (daysPerWeek > 0) sessionMinutes = Math.max(30, Math.round(weeklyMinutes / daysPerWeek));
+    }
+
+    return { preferredDays, dayTimes, sessionMinutes, targetDate };
+  }
+
+  private parseAnyTime(text: string): string | null {
+    // Accept 5pm, 10am, 17:00, 9:30 pm; require either a colon or am/pm to avoid matching plain numbers
+    const hasColon = /\b\d{1,2}:\d{2}\b/.test(text);
+    const hasAmPm = /\b\d{1,2}(?::\d{2})?\s*(am|pm)\b/i.test(text);
+    if (!hasColon && !hasAmPm) return null;
+    const match = text.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i);
+    if (!match) return null;
+    let hour = parseInt(match[1]);
+    const minute = match[2] ? parseInt(match[2]) : 0;
+    const ap = match[3]?.toLowerCase();
+    if (ap) {
+      if (ap === 'pm' && hour < 12) hour += 12;
+      if (ap === 'am' && hour === 12) hour = 0;
+    }
+    hour = Math.min(23, Math.max(0, hour));
+    const mm = Math.min(59, Math.max(0, minute));
+    const hhStr = String(hour).padStart(2, '0');
+    const mmStr = String(mm).padStart(2, '0');
+    return `${hhStr}:${mmStr}`;
   }
 
   async generateResponse(messages: ChatMessage[]): Promise<{success: boolean, message: string}> {
@@ -359,8 +463,11 @@ class AIService {
     return timeMap[slot] || '09:00';
   }
 
-  async createGoalFromConversation(conversationHistory: Array<{role: string, content: string}>): Promise<{success: boolean, goal?: any, tasks?: any[], error?: string}> {
-    if (!this.model) {
+  async createGoalFromConversation(
+    conversationHistory: Array<{role: string, content: string}>,
+    userContext?: { age?: number | null; gender?: string | null; heightCm?: number | null; weightKg?: number | null }
+  ): Promise<{success: boolean, goal?: any, tasks?: any[], error?: string}> {
+    if (!this.proModel && !this.model) {
       return { success: false, error: 'AI model not available' };
     }
 
@@ -370,6 +477,17 @@ class AIService {
       const currentTimeString = currentDate.toISOString();
       
       const systemPrompt = `You are a goal planning AI. Based on the conversation history, create a structured goal plan.
+
+          USER CONTEXT (optional, use only if relevant):
+          - Age: ${userContext?.age ?? 'N/A'}
+          - Gender: ${userContext?.gender ?? 'N/A'}
+          - Height (cm): ${userContext?.heightCm ?? 'N/A'}
+          - Weight (kg): ${userContext?.weightKg ?? 'N/A'}
+
+          Guidance on using user context:
+          - For fitness: tailor session duration, rest, pacing, and progression conservatively for older or deconditioned users; avoid absolute weights and prefer RPE/%1RM as below.
+          - For learning/work: adjust session lengths and break frequency if age suggests attention span differences.
+          - Never output private data; only use it to calibrate the plan design.
 
           CURRENT DATE AND TIME:
           - Today's date: ${currentDateString}
@@ -468,9 +586,22 @@ User said: "Tuesday, Thursday"
       
       const prompt = `${systemPrompt}\n\nConversation History:\n${conversationText}`;
 
-      const result = await this.model.generateContent(prompt);
-      const response = await result.response;
-      const text = response.text();
+      // Prefer Gemini Pro for plan creation, but fall back to Flash if needed.
+      let text: string;
+      try {
+        const resultPrimary = await (this.proModel || this.model).generateContent(prompt);
+        const responsePrimary = await resultPrimary.response;
+        text = responsePrimary.text();
+      } catch (primaryError) {
+        console.warn('⚠️ Primary model failed for plan creation, attempting fallback...', primaryError);
+        if (this.proModel && this.model) {
+          const resultFallback = await this.model.generateContent(prompt);
+          const responseFallback = await resultFallback.response;
+          text = responseFallback.text();
+        } else {
+          throw primaryError;
+        }
+      }
 
       // Clean the response to extract pure JSON
       let jsonText = text.trim();
@@ -492,70 +623,78 @@ User said: "Tuesday, Thursday"
       if (!planData.goal || !planData.tasks || !Array.isArray(planData.tasks)) {
         throw new Error('Invalid plan structure returned by AI');
       }
-
-      // Extract user's requested days from conversation
-      // Import validation utilities
-      const dayParserModule = await import('./ai/dayParser');
-      const schedulerModule = await import('./ai/scheduler');
+      // Extract user's requested scheduling preferences from conversation
+      const prefs = this.extractSchedulingPreferences(conversationHistory);
       
-      let userRequestedDays: any[] = [];
-      
-      // Search conversation for day preferences
-      for (const msg of conversationHistory) {
-        const content = msg.content.toLowerCase();
-        
-        // Look for day-related keywords
-        if (
-          content.includes('weekday') ||
-          content.includes('monday') ||
-          content.includes('tuesday') ||
-          content.includes('wednesday') ||
-          content.includes('thursday') ||
-          content.includes('friday') ||
-          content.includes('saturday') ||
-          content.includes('sunday') ||
-          content.includes('weekend') ||
-          content.includes('mon-fri') ||
-          content.includes('mon - fri')
-        ) {
-          try {
-            const parsedDays = dayParserModule.parseDayExpression(msg.content);
-            if (parsedDays.length > 0) {
-              userRequestedDays = parsedDays;
-              console.log(`📅 Detected user requested days: ${parsedDays.join(', ')}`);
-              break;
-            }
-          } catch (e) {
-            // Continue searching
-          }
-        }
+      // Determine target date
+      let targetDate: Date | null = prefs.targetDate;
+      if (!targetDate) {
+        // try from AI plan
+        const aiTarget = (planData.goal?.target_date as string | undefined) || '';
+        const aiParsed = parseTargetDateFromText(aiTarget);
+        if (aiParsed) targetDate = aiParsed; 
       }
-      
-      // Validate scheduled tasks match requested days
-      if (userRequestedDays.length > 0 && planData.tasks.length > 0) {
-        const validation = schedulerModule.validateTaskDays(planData.tasks, userRequestedDays);
-        
-        if (!validation.isValid) {
-          console.error('❌ SCHEDULING VALIDATION FAILED:');
-          console.error(`   User requested: ${validation.summary.allowedDaysFormatted}`);
-          console.error(`   Total tasks: ${validation.summary.totalTasks}`);
-          console.error(`   Valid tasks: ${validation.summary.validTasks}`);
-          console.error(`   Invalid tasks: ${validation.summary.invalidTasks}`);
-          console.error('   Violations:');
-          validation.violations.forEach(v => {
-            console.error(`   - Task "${v.taskTitle}" scheduled on ${v.scheduledDay} (${v.scheduledDayNumber})`);
-          });
-          
-          // Log warning but don't fail - let user see the issue
-          console.warn('⚠️ Proceeding with tasks despite scheduling violations. User can manually adjust.');
-        } else {
-          console.log('✅ All tasks scheduled correctly on requested days');
-          console.log(`   Requested days: ${validation.summary.allowedDaysFormatted}`);
-          console.log(`   All ${validation.summary.totalTasks} tasks validated`);
-        }
+      if (!targetDate) {
+        console.warn('⚠️ No target date detected; defaulting to 8 weeks out');
+        targetDate = new Date();
+        targetDate.setDate(targetDate.getDate() + 56);
       }
 
-      return { success: true, goal: planData.goal, tasks: planData.tasks };
+      // Build a deterministic schedule up to the target date using allowed days and per-day times
+      const preferredDays: DayOfWeek[] = (prefs.preferredDays && prefs.preferredDays.length > 0)
+        ? prefs.preferredDays as DayOfWeek[]
+        : (Object.keys(prefs.dayTimes) as DayOfWeek[]);
+      let effectivePreferredDays = preferredDays;
+      if (!effectivePreferredDays || effectivePreferredDays.length === 0) {
+        // Fallback to weekdays
+        effectivePreferredDays = ['Mon','Tue','Wed','Thu','Fri'];
+      }
+
+      const scheduled = buildScheduleWithDayTimes({
+        targetDateISO: toISODateString(targetDate),
+        preferredDays: effectivePreferredDays,
+        dayTimes: prefs.dayTimes,
+        sessionMinutes: prefs.sessionMinutes,
+        startFromTomorrow: true
+      });
+
+      // Merge AI descriptions with deterministic schedule and improve titles for running goals
+      const aiTasks: any[] = Array.isArray(planData.tasks) ? planData.tasks : [];
+      const mergedTasks = scheduled.map((slot, idx) => {
+        const source = aiTasks[idx % Math.max(1, aiTasks.length)] || {};
+        let title = source.title || `Session ${slot.seq}`;
+        const isRun = /run|marathon|training|jog|long run|interval/i.test(`${planData.goal?.title || ''} ${source.title || ''}`);
+        if (isRun) {
+          // Use more specific titles for running goals by day/time
+          const day = new Date(slot.due_at).toLocaleDateString('en-US', { weekday: 'long' });
+          const time = new Date(slot.due_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+          // Try to infer type from AI notes when present
+          const notesText = (source.notes || source.description || '').toLowerCase();
+          let kind = 'Run';
+          if (/interval|speed|tempo/.test(notesText)) kind = 'Speed Session';
+          else if (/long/.test(notesText)) kind = 'Long Run';
+          else if (/easy|recovery/.test(notesText)) kind = 'Easy Run';
+          title = `${kind} • ${day} ${time}`;
+        }
+        const notes = source.notes || source.description || 'Focused session. Build progressively and log notes.';
+        return {
+          title,
+          notes,
+          due_at: slot.due_at,
+          duration_minutes: slot.duration_minutes,
+          all_day: false,
+          status: 'pending',
+          seq: slot.seq
+        };
+      });
+
+      // Final goal with enforced target date
+      const goalOut = {
+        ...planData.goal,
+        target_date: toISODateString(targetDate)
+      };
+
+      return { success: true, goal: goalOut, tasks: mergedTasks };
 
         } catch (error: any) {
           console.error('Error creating goal from conversation:', error);

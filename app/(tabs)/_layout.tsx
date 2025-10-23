@@ -1,5 +1,5 @@
 import { Tabs } from "expo-router";
-import { Home, MessageCircle, Calendar, Target, Settings } from "lucide-react-native";
+import { Image } from "react-native";
 import React from "react";
 import { useTheme } from "@/providers/ThemeProvider";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -17,7 +17,9 @@ export default function TabLayout() {
           backgroundColor: colors.background,
           borderTopColor: colors.border,
           borderTopWidth: 1,
-          paddingBottom: insets.bottom,
+          paddingBottom: insets.bottom + 12,
+          paddingTop: 6,
+          height: 88,
           elevation: 8,
           shadowColor: colors.text,
           shadowOffset: {
@@ -28,9 +30,10 @@ export default function TabLayout() {
           shadowRadius: 4,
         },
         tabBarLabelStyle: {
-          fontSize: 11,
+          fontSize: 12,
           fontWeight: "500" as const,
-          marginTop: 4,
+          marginTop: 6,
+          lineHeight: 14,
         },
         tabBarItemStyle: {
           paddingVertical: 4,
@@ -42,35 +45,45 @@ export default function TabLayout() {
         name="(home)"
         options={{
           title: "Home",
-          tabBarIcon: ({ color, size }) => <Home size={size} color={color} />,
+          tabBarIcon: () => (
+            <Image source={require('@/assets/images/home-icon.png')} style={{ width: 40, height: 40 }} resizeMode="contain" />
+          ),
         }}
       />
       <Tabs.Screen
         name="chat"
         options={{
           title: "Chat",
-          tabBarIcon: ({ color, size }) => <MessageCircle size={size} color={color} />,
+          tabBarIcon: () => (
+            <Image source={require('@/assets/images/ai-chat-icon.png')} style={{ width: 40, height: 40 }} resizeMode="contain" />
+          ),
         }}
       />
       <Tabs.Screen
         name="calendar"
         options={{
           title: "Calendar",
-          tabBarIcon: ({ color, size }) => <Calendar size={size} color={color} />,
+          tabBarIcon: () => (
+            <Image source={require('@/assets/images/calendar-icon.png')} style={{ width: 40, height: 40 }} resizeMode="contain" />
+          ),
         }}
       />
       <Tabs.Screen
         name="goals"
         options={{
           title: "Goals",
-          tabBarIcon: ({ color, size }) => <Target size={size} color={color} />,
+          tabBarIcon: () => (
+            <Image source={require('@/assets/images/goals-icon.png')} style={{ width: 40, height: 40 }} resizeMode="contain" />
+          ),
         }}
       />
       <Tabs.Screen
         name="settings"
         options={{
           title: "Settings",
-          tabBarIcon: ({ color, size }) => <Settings size={size} color={color} />,
+          tabBarIcon: () => (
+            <Image source={require('@/assets/images/settings-icon.png')} style={{ width: 40, height: 40 }} resizeMode="contain" />
+          ),
         }}
       />
     </Tabs>
