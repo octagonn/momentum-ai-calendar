@@ -10,11 +10,12 @@ import {
   Alert,
   ImageBackground,
 } from 'react-native';
-import { Plus, Target, Calendar, CheckCircle } from 'lucide-react-native';
+import { Plus, Target, Calendar, CheckCircle, Lock } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../providers/ThemeProvider';
 import { useAuth } from '../../providers/AuthProvider';
 import { useGoals } from '../../providers/GoalsProvider';
+import { useSubscription } from '../../providers/SubscriptionProvider';
 import { supabase } from '../../lib/supabase-client';
 import { router } from 'expo-router';
 import GoalModal from '../components/GoalModal';
@@ -43,7 +44,8 @@ interface GoalWithProgress extends Goal {
 export default function GoalsScreen() {
   const { colors, isDark, isGalaxy } = useTheme();
   const { user } = useAuth();
-  const { updateGoal, refreshTasks } = useGoals();
+  const { updateGoal, refreshTasks, isGoalLocked } = useGoals();
+  const { showUpgradeModal, isPremium } = useSubscription();
   const insets = useSafeAreaInsets();
   
   const [goals, setGoals] = useState<GoalWithProgress[]>([]);
@@ -85,9 +87,10 @@ export default function GoalsScreen() {
         
         // Add default color to goals if color field is not available
         if (data) {
+          // Defer to theme primary color as default; UI will still read colors.primary dynamically
           data = data.map(goal => ({
             ...goal,
-            color: goal.color || '#3B82F6'
+            color: goal.color || undefined
           }));
         }
       }
@@ -278,11 +281,22 @@ export default function GoalsScreen() {
 
   const renderGoalCard = ({ item }: { item: GoalWithProgress }) => {
     const progressPercentage = Math.round((item.completion_ratio || 0) * 100);
+    const locked = !isPremium && isGoalLocked(item.id || item.goal_id);
     
     return (
       <TouchableOpacity
-        style={[styles.goalCard, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(255, 255, 255, 0.8)' }]}
-        onPress={() => handleGoalPress(item)}
+        style={[
+          styles.goalCard,
+          { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(255, 255, 255, 0.8)' },
+          locked && { opacity: 0.6 }
+        ]}
+        onPress={() => {
+          if (locked) {
+            showUpgradeModal('goal_limit');
+            return;
+          }
+          handleGoalPress(item);
+        }}
         activeOpacity={0.7}
       >
         <View style={styles.goalHeader}>
@@ -292,8 +306,8 @@ export default function GoalsScreen() {
               {item.title}
             </Text>
           </View>
-          <View style={[styles.statusBadge, { backgroundColor: item.color || colors.primary }]}>
-            <Text style={styles.statusText}>{progressPercentage}%</Text>
+          <View style={[styles.statusBadge, { backgroundColor: item.color || colors.primary }]}> 
+            <Text style={styles.statusText}>{locked ? 'Locked' : `${progressPercentage}%`}</Text>
           </View>
         </View>
 
@@ -329,18 +343,26 @@ export default function GoalsScreen() {
           </View>
         )}
 
-        <View style={styles.goalActions}>
-          <TouchableOpacity
-            style={[styles.addTaskButton, { borderColor: colors.primary }]}
-            onPress={() => handleAddTask(item)}
-            activeOpacity={0.7}
-          >
-            <Plus size={16} color={colors.primary} />
-            <Text style={[styles.addTaskText, { color: colors.primary }]}>
-              Add Task
-            </Text>
-          </TouchableOpacity>
-        </View>
+        {!locked ? (
+          <View style={styles.goalActions}>
+            <TouchableOpacity
+              style={[styles.addTaskButton, { borderColor: colors.primary }]}
+              onPress={() => handleAddTask(item)}
+              activeOpacity={0.7}
+            >
+              <Plus size={16} color={colors.primary} />
+              <Text style={[styles.addTaskText, { color: colors.primary }]}> 
+                Add Task
+              </Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <View style={[StyleSheet.absoluteFillObject]}> 
+            <View style={{ position: 'absolute', top: 12, right: 12, backgroundColor: '#00000055', borderRadius: 12, padding: 6 }}>
+              <Lock size={16} color={'white'} />
+            </View>
+          </View>
+        )}
       </TouchableOpacity>
     );
   };

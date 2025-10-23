@@ -25,6 +25,13 @@ interface User {
   subscriptionTier?: 'free' | 'premium' | 'family';
   subscriptionStatus?: 'active' | 'expired' | 'cancelled' | 'trialing';
   trialEndsAt?: string;
+  // Optional demographics/biometrics for personalization
+  age?: number | null;
+  gender?: string | null;
+  heightCm?: number | null;
+  weightKg?: number | null;
+  dateOfBirth?: string | null; // YYYY-MM-DD
+  unitSystem?: 'imperial' | 'metric';
 }
 
 interface UserContextType {
@@ -321,6 +328,12 @@ export const [UserProvider, useUser] = createContextHook<UserContextType>(() => 
         subscriptionTier: profile.subscription_tier || 'free',
         subscriptionStatus: profile.subscription_status || 'expired',
         trialEndsAt: profile.trial_ends_at || undefined,
+        age: profile.age ?? null,
+        gender: profile.gender ?? null,
+        heightCm: profile.height_cm ?? null,
+        weightKg: profile.weight_kg ?? null,
+        dateOfBirth: profile.date_of_birth ?? null,
+        unitSystem: profile.unit_system || 'metric',
       };
 
       setUser(userData);
@@ -428,6 +441,12 @@ export const [UserProvider, useUser] = createContextHook<UserContextType>(() => 
       if (updates.name !== undefined) dbUpdates.full_name = updates.name;
       if (updates.username !== undefined) dbUpdates.username = updates.username;
       if (updates.onboardingCompleted !== undefined) dbUpdates.onboarding_completed = updates.onboardingCompleted;
+      if (updates.age !== undefined) dbUpdates.age = updates.age;
+      if (updates.gender !== undefined) dbUpdates.gender = updates.gender;
+      if (updates.heightCm !== undefined) dbUpdates.height_cm = updates.heightCm;
+      if (updates.weightKg !== undefined) dbUpdates.weight_kg = updates.weightKg;
+      if (updates.dateOfBirth !== undefined) dbUpdates.date_of_birth = updates.dateOfBirth;
+      if (updates.unitSystem !== undefined) dbUpdates.unit_system = updates.unitSystem;
       dbUpdates.updated_at = new Date().toISOString();
 
       const { error } = await supabase

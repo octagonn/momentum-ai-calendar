@@ -15,6 +15,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../providers/ThemeProvider';
 import { useAuth } from '../../providers/AuthProvider';
 import { supabase } from '../../lib/supabase-client';
+import { useGoals } from '../../providers/GoalsProvider';
+import { useSubscription } from '../../providers/SubscriptionProvider';
 // GoalEditModal is now rendered at a higher level to avoid nested modals
 import TaskEditModal from './TaskEditModal';
 import TaskViewModal from './TaskViewModal';
@@ -306,6 +308,10 @@ export default function GoalModal({ visible, goal, onClose, onTaskToggle, onGoal
   const pendingTasks = sortedTasks.filter(task => task.status !== 'done');
   const completedTasks = sortedTasks.filter(task => task.status === 'done');
 
+  const { isGoalLocked } = useGoals();
+  const { showUpgradeModal, isPremium } = useSubscription();
+  const locked = !isPremium && isGoalLocked(goal?.id || (goal as any)?.goal_id);
+
   if (!currentGoal) return null;
 
   return (
@@ -322,6 +328,13 @@ export default function GoalModal({ visible, goal, onClose, onTaskToggle, onGoal
             style={StyleSheet.absoluteFillObject} 
             resizeMode="cover"
           />
+        )}
+        {locked && (
+          <TouchableOpacity onPress={() => showUpgradeModal('goal_limit')} activeOpacity={0.8}>
+            <View style={[styles.lockOverlay, { borderColor: colors.border, backgroundColor: isDark ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.7)' }]}>
+              <Text style={[styles.lockText, { color: colors.text }]}>This goal is locked. Upgrade to access.</Text>
+            </View>
+          </TouchableOpacity>
         )}
         <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
           <View style={styles.headerContent}>
@@ -704,6 +717,17 @@ const styles = StyleSheet.create({
   },
   checkboxContainer: {
     padding: 4,
+  },
+  lockOverlay: {
+    margin: 20,
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: 'center',
+  },
+  lockText: {
+    fontSize: 14,
+    fontWeight: '600',
   },
 });
 

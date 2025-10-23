@@ -12,10 +12,12 @@ import {
   Alert,
   ImageBackground,
 } from 'react-native';
-import { Send, Bot, CheckCircle, Sparkles, MessageSquare, Target, Crown, Plus } from 'lucide-react-native';
+import { Send, CheckCircle, Sparkles, MessageSquare, Target, Crown, Plus } from 'lucide-react-native';
+import { Image } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/providers/ThemeProvider';
 import { useAuth } from '@/providers/AuthProvider';
+import { useUser } from '@/providers/UserProvider';
 import { useSubscription } from '@/providers/SubscriptionProvider';
 import { useNotifications } from '@/providers/NotificationProvider';
 import { aiService } from '@/lib/ai-service';
@@ -35,6 +37,7 @@ interface Message {
 export default function ChatScreen() {
   const { colors, isDark, isGalaxy } = useTheme();
   const { user } = useAuth();
+  const { user: profile } = useUser();
   const { isPremium } = useSubscription();
   const { preferences: notificationPreferences } = useNotifications();
   const insets = useSafeAreaInsets();
@@ -324,8 +327,13 @@ export default function ChatScreen() {
       // Ensure user profile exists
       await ensureUserProfile(supabase, user.id);
 
-      // Call the AI service to create the goal plan from the conversation
-      const planResponse = await aiService.createGoalFromConversation(conversationHistory);
+      // Call the AI service to create the goal plan from the conversation, with optional user context
+      const planResponse = await aiService.createGoalFromConversation(conversationHistory, {
+        age: profile?.age ?? null,
+        gender: profile?.gender ?? null,
+        heightCm: profile?.heightCm ?? null,
+        weightKg: profile?.weightKg ?? null,
+      });
       
       if (planResponse.success && planResponse.goal && planResponse.tasks) {
         // The database function will automatically assign a color if not provided
@@ -383,8 +391,8 @@ export default function ChatScreen() {
 
     return (
       <View style={styles.starterContainer}>
-        <View style={[styles.welcomeCard, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(255, 255, 255, 0.8)' }]}>
-          <Bot size={32} color={colors.primary} />
+          <View style={[styles.welcomeCard, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(255, 255, 255, 0.8)' }]}> 
+          <Image source={require('@/assets/images/ai-assistant-icon-1.png')} style={{ width: 120, height: 120 }} resizeMode="contain" />
           <Text style={[styles.welcomeTitle, { color: colors.text }]}>
             AI Chat Assistant
           </Text>
@@ -443,13 +451,13 @@ export default function ChatScreen() {
     return (
       <View key={message.id} style={[styles.messageContainer, isUser ? styles.userMessage : styles.assistantMessage]}>
         {!isUser && (
-          <View style={[styles.avatar, { backgroundColor: colors.primary }]}>
-            <Bot size={16} color={colors.background} />
+          <View style={[styles.avatar, { backgroundColor: colors.primary }]}> 
+            <Image source={require('@/assets/images/ai-chat-icon.png')} style={{ width: 18, height: 18 }} resizeMode="contain" />
           </View>
         )}
         <View style={[styles.messageBubble, isUser ? styles.userBubble : styles.assistantBubble]}>
           <Text style={[styles.messageText, isUser ? styles.userText : styles.assistantText]}>
-            {message.content}
+            {renderMarkdownBold(message.content)}
           </Text>
           <Text style={[styles.timestamp, isUser ? styles.userTimestamp : styles.assistantTimestamp]}>
             {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -457,6 +465,28 @@ export default function ChatScreen() {
         </View>
       </View>
     );
+  };
+
+  // Minimal markdown renderer for bold (**text**). Preserves newlines.
+  const renderMarkdownBold = (text: string) => {
+    const lines = text.split('\n');
+    return lines.map((line, lineIdx) => (
+      <React.Fragment key={`ln-${lineIdx}`}>
+        {line.split(/(\*\*[^*]+\*\*)/g).map((part, idx) => {
+          const isBold = /^\*\*[^*]+\*\*$/.test(part);
+          if (isBold) {
+            const inner = part.slice(2, -2);
+            return (
+              <Text key={`b-${lineIdx}-${idx}`} style={{ fontWeight: '700' }}>
+                {inner}
+              </Text>
+            );
+          }
+          return <React.Fragment key={`t-${lineIdx}-${idx}`}>{part}</React.Fragment>;
+        })}
+        {lineIdx < lines.length - 1 ? '\n' : null}
+      </React.Fragment>
+    ));
   };
 
   return (

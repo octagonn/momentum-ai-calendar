@@ -16,7 +16,9 @@ import {
   ImageBackground,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
-import { Crown, Shield, FileText, X, Lock, Sun, Moon, Monitor, Sparkles } from "lucide-react-native";
+import { Crown, Shield, FileText, X, Lock, Sun, Moon, Monitor, Sparkles, Calendar } from "lucide-react-native";
+import DateTimePicker from '@react-native-community/datetimepicker';
+import { Picker } from '@react-native-picker/picker';
 import * as Haptics from "expo-haptics";
 import { useTheme } from "@/providers/ThemeProvider";
 import { useUser } from "@/providers/UserProvider";
@@ -46,6 +48,7 @@ export default function SettingsScreen() {
   } = useNotifications();
   
   const [taskReminderMinutes, setTaskReminderMinutes] = useState(notificationPreferences.taskReminderMinutes);
+  const [showDobPicker, setShowDobPicker] = useState<boolean>(false);
   
   // Handle case where user is still loading or null
   if (!user) {
@@ -394,6 +397,34 @@ export default function SettingsScreen() {
       color: colors.text,
       minWidth: 150,
       fontFamily: 'Inter_500Medium',
+    },
+    smallInput: {
+      width: 100,
+      textAlign: 'right' as const,
+    },
+    chipRow: {
+      flexDirection: 'row',
+      flexWrap: 'wrap' as const,
+      gap: 8,
+      justifyContent: 'flex-end',
+      alignItems: 'center',
+    },
+    chip: {
+      borderWidth: 1,
+      borderColor: isDark ? 'rgba(255,255,255,0.1)' : colors.border,
+      backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.02)',
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      borderRadius: 999,
+    },
+    chipActive: {
+      backgroundColor: colors.primary,
+      borderColor: colors.primary,
+    },
+    chipText: {
+      fontSize: 14,
+      fontWeight: '600' as const,
+      color: colors.text,
     },
     actionButton: {
       backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.03)',
@@ -875,6 +906,143 @@ export default function SettingsScreen() {
           </View>
         </View>
 
+      {/* Personalization */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Personalization</Text>
+
+        {/* Date of birth (view only) */}
+        <View style={styles.settingItem}>
+          <View style={styles.settingRow}>
+            <View style={styles.settingInfo}>
+              <Text style={styles.settingLabel}>Date of Birth</Text>
+              <Text style={styles.settingDescription}>Optional, used only to personalize plans</Text>
+            </View>
+            <View style={[styles.actionButton, { opacity: 0.7 }]}> 
+              <Calendar size={16} color={colors.text} />
+              <Text style={styles.actionButtonText}>
+                {user.dateOfBirth ? (() => { const p = user.dateOfBirth.split('-'); const d = new Date(parseInt(p[0],10), parseInt(p[1],10)-1, parseInt(p[2],10)); return d.toLocaleDateString(); })() : '—'}
+              </Text>
+            </View>
+          </View>
+        </View>
+        {/* DOB editing disabled in settings */}
+
+        {/* Gender */}
+        <View style={styles.settingItem}>
+          <View style={styles.settingRow}>
+            <View style={styles.settingInfo}>
+              <Text style={styles.settingLabel}>Gender</Text>
+              <Text style={styles.settingDescription}>Optional, choose what fits best</Text>
+            </View>
+            <View style={styles.chipRow}>
+              {['Female','Male','Non-binary','Prefer not to say'].map((g) => {
+                const selected = (user.gender || '') === g;
+                return (
+                  <TouchableOpacity
+                    key={g}
+                    style={[styles.chip, selected && styles.chipActive]}
+                    onPress={() => updateUser({ gender: selected ? '' : g })}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={[styles.chipText, { color: selected ? 'white' : colors.text }]}>{g}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+        </View>
+
+        {/* Height / Weight per unit preference */}
+        <View style={styles.settingItem}>
+          <View style={styles.settingRow}>
+            <View style={styles.settingInfo}>
+              <Text style={styles.settingLabel}>Height ({(user.unitSystem || 'metric') === 'imperial' ? 'ft/in' : 'cm'})</Text>
+              <Text style={styles.settingDescription}>Optional</Text>
+            </View>
+            { (user.unitSystem || 'metric') === 'imperial' ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                <View style={{ width: 100 }}>
+                  <Picker
+                    selectedValue={(() => { const inches = user.heightCm ? Math.round(user.heightCm / 2.54) : 66; return String(Math.floor(inches / 12)); })()}
+                    onValueChange={(ft) => {
+                      const inches = user.heightCm ? Math.round(user.heightCm / 2.54) : 66;
+                      const newInches = parseInt(ft as string, 10) * 12 + (inches % 12);
+                      updateUser({ heightCm: Math.round(newInches * 2.54) });
+                    }}
+                    itemStyle={{ color: colors.text }}
+                  >
+                    {Array.from({ length: 6 }).map((_, i) => {
+                      const val = 3 + i; // 3..8
+                      return <Picker.Item key={val} label={`${val} ft`} value={String(val)} />
+                    })}
+                  </Picker>
+                </View>
+                <View style={{ width: 100 }}>
+                  <Picker
+                    selectedValue={(() => { const inches = user.heightCm ? Math.round(user.heightCm / 2.54) : 66; return String(inches % 12); })()}
+                    onValueChange={(inch) => {
+                      const inches = user.heightCm ? Math.round(user.heightCm / 2.54) : 66;
+                      const newInches = Math.floor(inches / 12) * 12 + parseInt(inch as string, 10);
+                      updateUser({ heightCm: Math.round(newInches * 2.54) });
+                    }}
+                    itemStyle={{ color: colors.text }}
+                  >
+                    {Array.from({ length: 12 }).map((_, i) => (
+                      <Picker.Item key={i} label={`${i} in`} value={String(i)} />
+                    ))}
+                  </Picker>
+                </View>
+              </View>
+            ) : (
+              <View style={{ width: 140 }}>
+                <Picker
+                  selectedValue={user.heightCm != null ? String(user.heightCm) : '170'}
+                  onValueChange={(v) => updateUser({ heightCm: parseInt(String(v), 10) })}
+                  itemStyle={{ color: colors.text }}
+                >
+                  {Array.from({ length: 201 }).map((_, i) => {
+                    const val = 50 + i;
+                    return <Picker.Item key={val} label={`${val} cm`} value={String(val)} />
+                  })}
+                </Picker>
+              </View>
+            )}
+          </View>
+        </View>
+
+        {/* Weight */}
+        <View style={[styles.settingItem, styles.settingItemLast]}>
+          <View style={styles.settingRow}>
+            <View style={styles.settingInfo}>
+              <Text style={styles.settingLabel}>Weight ({(user.unitSystem || 'metric') === 'imperial' ? 'lb' : 'kg'})</Text>
+              <Text style={styles.settingDescription}>Optional</Text>
+            </View>
+            { (user.unitSystem || 'metric') === 'imperial' ? (
+              <Text style={[styles.settingLabel, { minWidth: 80, textAlign: 'right' }]}>
+                {user.weightKg ? `${Math.round(user.weightKg * 2.20462)} lb` : '—'}
+              </Text>
+            ) : (
+              <TextInput
+                style={[styles.textInput, styles.smallInput]}
+                keyboardType="number-pad"
+                placeholder="e.g. 70"
+                placeholderTextColor={colors.textMuted}
+                value={user.weightKg != null ? String(user.weightKg) : ''}
+                onChangeText={(t) => {
+                  const v = t.replace(/[^0-9]/g, '');
+                  const num = v ? Math.max(20, Math.min(500, parseInt(v, 10))) : undefined;
+                  updateUser({ weightKg: num as any });
+                }}
+              />
+            )}
+          </View>
+        </View>
+
+        <Text style={{ fontSize: 12, color: colors.textSecondary, textAlign: 'center', marginTop: 8 }}>
+          This information is optional and used only to personalize your plan. It’s private, anonymous, and will never be sold.
+        </Text>
+      </View>
+
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Notifications</Text>
           
@@ -1054,7 +1222,7 @@ export default function SettingsScreen() {
         onRequestClose={() => setPrivacyModalVisible(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContainer}>
+          <View style={[styles.modalContainer, { backgroundColor: colors.background }]}> 
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Privacy Policy</Text>
               <TouchableOpacity
@@ -1066,68 +1234,43 @@ export default function SettingsScreen() {
               </TouchableOpacity>
             </View>
             <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={false}>
-              <Text style={styles.modalLastUpdated}>Last updated: December 27, 2024</Text>
+              <Text style={styles.modalLastUpdated}>Last updated: October 22, 2025</Text>
 
-              <Text style={[styles.modalSectionTitle, styles.modalFirstSectionTitle]}>Introduction</Text>
+              <Text style={[styles.modalSectionTitle, styles.modalFirstSectionTitle]}>Overview</Text>
               <Text style={styles.modalParagraph}>
-                Welcome to Momentum. We respect your privacy and are committed to protecting your personal data. 
-                This privacy policy explains how we collect, use, and safeguard your information when you use our app.
+                We collect only what we need to operate Momentum and improve your experience. We do not sell your personal data.
               </Text>
 
               <Text style={styles.modalSectionTitle}>Information We Collect</Text>
-              <Text style={styles.modalParagraph}>We collect the following types of information:</Text>
-              <Text style={styles.modalBulletPoint}>• Account information (name, email address)</Text>
-              <Text style={styles.modalBulletPoint}>• Goal and task data you create</Text>
-              <Text style={styles.modalBulletPoint}>• App usage analytics and performance data</Text>
-              <Text style={styles.modalBulletPoint}>• Device information for app optimization</Text>
+              <Text style={styles.modalParagraph}>We process:</Text>
+              <Text style={styles.modalBulletPoint}>• Account data: name, email, authentication identifiers</Text>
+              <Text style={styles.modalBulletPoint}>• App content: goals, tasks, settings</Text>
+              <Text style={styles.modalBulletPoint}>• Diagnostics: crash reports, performance metrics</Text>
+              <Text style={styles.modalBulletPoint}>• Device info: model, OS version, timezone</Text>
 
               <Text style={styles.modalSectionTitle}>How We Use Your Information</Text>
-              <Text style={styles.modalParagraph}>Your information is used to:</Text>
-              <Text style={styles.modalBulletPoint}>• Provide and maintain our services</Text>
-              <Text style={styles.modalBulletPoint}>• Sync your data across devices</Text>
-              <Text style={styles.modalBulletPoint}>• Send you notifications and updates</Text>
-              <Text style={styles.modalBulletPoint}>• Improve our app and user experience</Text>
-              <Text style={styles.modalBulletPoint}>• Provide customer support</Text>
+              <Text style={styles.modalParagraph}>We use data to provide the app, sync across devices, send reminders you request, secure accounts, and improve features.</Text>
 
-              <Text style={styles.modalSectionTitle}>Data Storage and Security</Text>
-              <Text style={styles.modalParagraph}>
-                Your data is stored securely using industry-standard encryption. We use Supabase as our backend 
-                service, which provides enterprise-grade security and compliance. Your personal data is never 
-                shared with third parties without your explicit consent.
-              </Text>
+              <Text style={styles.modalSectionTitle}>Sharing</Text>
+              <Text style={styles.modalParagraph}>We do not sell data. We share with service providers (e.g., Supabase, Apple/Google IAP, analytics) strictly to operate the service, under contract, and only what is necessary.</Text>
+
+              <Text style={styles.modalSectionTitle}>Security</Text>
+              <Text style={styles.modalParagraph}>We use industry-standard protections in transit and at rest. No method is 100% secure; you use the app at your own risk.</Text>
 
               <Text style={styles.modalSectionTitle}>Your Rights</Text>
-              <Text style={styles.modalParagraph}>You have the right to:</Text>
-              <Text style={styles.modalBulletPoint}>• Access your personal data</Text>
-              <Text style={styles.modalBulletPoint}>• Correct inaccurate information</Text>
-              <Text style={styles.modalBulletPoint}>• Delete your account and data</Text>
-              <Text style={styles.modalBulletPoint}>• Export your data</Text>
-              <Text style={styles.modalBulletPoint}>• Opt out of non-essential communications</Text>
+              <Text style={styles.modalParagraph}>Subject to local law, you may access, correct, export, and delete your data. Contact us to exercise these rights.</Text>
 
-              <Text style={styles.modalSectionTitle}>Data Retention</Text>
-              <Text style={styles.modalParagraph}>
-                We retain your data for as long as your account is active. When you delete your account, 
-                we will permanently delete your personal data within 30 days, except where we are required 
-                to retain it for legal purposes.
-              </Text>
+              <Text style={styles.modalSectionTitle}>Retention</Text>
+              <Text style={styles.modalParagraph}>We keep data while your account is active. When you delete your account, we aim to remove personal data within 30 days, unless retention is required by law, security, or dispute resolution.</Text>
 
-              <Text style={styles.modalSectionTitle}>Third-Party Services</Text>
-              <Text style={styles.modalParagraph}>
-                Our app uses third-party services including Supabase for data storage and Expo for app 
-                infrastructure. These services have their own privacy policies and security measures.
-              </Text>
+              <Text style={styles.modalSectionTitle}>International Transfers</Text>
+              <Text style={styles.modalParagraph}>Your data may be processed outside your country. We use safeguards where required by law.</Text>
 
               <Text style={styles.modalSectionTitle}>Changes to This Policy</Text>
-              <Text style={styles.modalParagraph}>
-                We may update this privacy policy from time to time. We will notify you of any significant 
-                changes by posting the new policy in the app and updating the Last updated date.
-              </Text>
+              <Text style={styles.modalParagraph}>We may update this policy. Continued use means you accept the updated terms.</Text>
 
               <Text style={styles.modalSectionTitle}>Contact Us</Text>
-              <Text style={styles.modalParagraph}>
-                If you have any questions about this privacy policy or our data practices, please contact 
-                us at privacy@momentum-app.com.
-              </Text>
+              <Text style={styles.modalParagraph}>privacy@momentum-app.com</Text>
             </ScrollView>
           </View>
         </View>
@@ -1141,7 +1284,7 @@ export default function SettingsScreen() {
         onRequestClose={() => setTermsModalVisible(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContainer}>
+          <View style={[styles.modalContainer, { backgroundColor: colors.background }]}> 
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Terms & Conditions</Text>
               <TouchableOpacity
@@ -1153,91 +1296,43 @@ export default function SettingsScreen() {
               </TouchableOpacity>
             </View>
             <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={false}>
-              <Text style={styles.modalLastUpdated}>Last updated: December 27, 2024</Text>
+              <Text style={styles.modalLastUpdated}>Last updated: October 22, 2025</Text>
 
-              <Text style={[styles.modalSectionTitle, styles.modalFirstSectionTitle]}>Agreement to Terms</Text>
-              <Text style={styles.modalParagraph}>
-                By downloading, installing, or using the Momentum app, you agree to be bound by these 
-                Terms and Conditions. If you do not agree to these terms, please do not use our service.
-              </Text>
+              <Text style={[styles.modalSectionTitle, styles.modalFirstSectionTitle]}>Agreement</Text>
+              <Text style={styles.modalParagraph}>By using Momentum, you agree to these Terms. If you do not agree, do not use the app.</Text>
 
-              <Text style={styles.modalSectionTitle}>Description of Service</Text>
-              <Text style={styles.modalParagraph}>
-                Momentum is a goal-tracking and productivity app that helps users set, track, and achieve 
-                their personal and professional goals. Our service includes task management, progress tracking, 
-                AI-powered coaching, and data synchronization across devices.
-              </Text>
+              <Text style={styles.modalSectionTitle}>Service</Text>
+              <Text style={styles.modalParagraph}>Momentum is provided “as is” and “as available.” Features may change or be discontinued.</Text>
 
-              <Text style={styles.modalSectionTitle}>User Accounts</Text>
-              <Text style={styles.modalParagraph}>
-                To use certain features of our app, you must create an account. You are responsible for:
-              </Text>
-              <Text style={styles.modalBulletPoint}>• Maintaining the confidentiality of your account credentials</Text>
-              <Text style={styles.modalBulletPoint}>• All activities that occur under your account</Text>
-              <Text style={styles.modalBulletPoint}>• Providing accurate and up-to-date information</Text>
-              <Text style={styles.modalBulletPoint}>• Notifying us immediately of any unauthorized use</Text>
+              <Text style={styles.modalSectionTitle}>Accounts</Text>
+              <Text style={styles.modalParagraph}>You are responsible for your account, content, and device. You must be legally permitted to use the app.</Text>
 
               <Text style={styles.modalSectionTitle}>Acceptable Use</Text>
-              <Text style={styles.modalParagraph}>You agree not to:</Text>
-              <Text style={styles.modalBulletPoint}>• Use the app for any illegal or unauthorized purpose</Text>
-              <Text style={styles.modalBulletPoint}>• Attempt to gain unauthorized access to our systems</Text>
-              <Text style={styles.modalBulletPoint}>• Interfere with or disrupt the service</Text>
-              <Text style={styles.modalBulletPoint}>• Upload malicious code or harmful content</Text>
-              <Text style={styles.modalBulletPoint}>• Violate any applicable laws or regulations</Text>
+              <Text style={styles.modalParagraph}>No unlawful, harmful, or infringing activity. No reverse engineering, scraping, or unauthorized access.</Text>
 
-              <Text style={styles.modalSectionTitle}>Subscription and Payments</Text>
-              <Text style={styles.modalParagraph}>
-                Momentum offers both free and premium subscription tiers. Premium subscriptions are billed 
-                monthly or annually. You may cancel your subscription at any time, but refunds are not 
-                provided for partial billing periods.
-              </Text>
+              <Text style={styles.modalSectionTitle}>Subscriptions</Text>
+              <Text style={styles.modalParagraph}>Purchases and trials are processed by Apple/Google. Billing is handled by those platforms. Taxes may apply. Refunds follow platform rules.</Text>
 
               <Text style={styles.modalSectionTitle}>Intellectual Property</Text>
-              <Text style={styles.modalParagraph}>
-                The Momentum app, including its design, features, and content, is owned by us and protected 
-                by copyright, trademark, and other intellectual property laws. You retain ownership of the 
-                content you create within the app.
-              </Text>
+              <Text style={styles.modalParagraph}>We (or our licensors) own the app and all related IP. You own your content. You grant us a limited license to process your content to provide the service.</Text>
 
-              <Text style={styles.modalSectionTitle}>Data and Privacy</Text>
-              <Text style={styles.modalParagraph}>
-                Your privacy is important to us. Our collection and use of your personal information is 
-                governed by our Privacy Policy, which is incorporated into these terms by reference.
-              </Text>
+              <Text style={styles.modalSectionTitle}>Privacy</Text>
+              <Text style={styles.modalParagraph}>Our Privacy Policy explains how we handle data and is part of these Terms.</Text>
 
-              <Text style={styles.modalSectionTitle}>Service Availability</Text>
-              <Text style={styles.modalParagraph}>
-                We strive to maintain high service availability, but we do not guarantee uninterrupted 
-                access. We may temporarily suspend the service for maintenance, updates, or other 
-                operational reasons.
-              </Text>
+              <Text style={styles.modalSectionTitle}>Availability</Text>
+              <Text style={styles.modalParagraph}>We do not guarantee uninterrupted service. We may suspend or terminate the app or features at any time.</Text>
 
-              <Text style={styles.modalSectionTitle}>Limitation of Liability</Text>
-              <Text style={styles.modalParagraph}>
-                To the maximum extent permitted by law, we shall not be liable for any indirect, incidental, 
-                special, or consequential damages arising from your use of the app, including but not limited 
-                to loss of data, profits, or business opportunities.
-              </Text>
+              <Text style={styles.modalSectionTitle}>Disclaimer; Liability</Text>
+              <Text style={styles.modalParagraph}>To the fullest extent permitted by law, the app is provided without warranties, and our total liability is limited to the amounts you paid us for the service in the 12 months before the claim, or $50 if none.</Text>
 
               <Text style={styles.modalSectionTitle}>Termination</Text>
-              <Text style={styles.modalParagraph}>
-                We may terminate or suspend your account and access to the service at our discretion, 
-                with or without notice, for violations of these terms or other reasons. You may also 
-                terminate your account at any time through the app settings.
-              </Text>
+              <Text style={styles.modalParagraph}>We may suspend or terminate your access for any reason, including violations of these Terms. You may stop using the app at any time.</Text>
 
-              <Text style={styles.modalSectionTitle}>Changes to Terms</Text>
-              <Text style={styles.modalParagraph}>
-                We reserve the right to modify these terms at any time. We will notify users of significant 
-                changes through the app or by email. Continued use of the service after changes constitutes 
-                acceptance of the new terms.
-              </Text>
+              <Text style={styles.modalSectionTitle}>Changes</Text>
+              <Text style={styles.modalParagraph}>We may update these Terms. Continued use after updates means you accept them.</Text>
 
-              <Text style={styles.modalSectionTitle}>Contact Information</Text>
-              <Text style={styles.modalParagraph}>
-                If you have questions about these Terms and Conditions, please contact us at 
-                legal@momentum-app.com.
-              </Text>
+              <Text style={styles.modalSectionTitle}>Contact</Text>
+              <Text style={styles.modalParagraph}>legal@momentum-app.com</Text>
             </ScrollView>
           </View>
         </View>

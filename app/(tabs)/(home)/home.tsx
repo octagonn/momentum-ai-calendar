@@ -255,8 +255,10 @@ export default function HomeScreen() {
   const totalGoalTasks = allTodaysTasks.length;
   const goalProgressPercentage = totalGoalTasks > 0 ? Math.round((completedGoalTasks / totalGoalTasks) * 100) : 0;
 
+  const tasksValue = totalGoalTasks === 0 ? '—' : `${completedGoalTasks}/${totalGoalTasks}`;
+  const tasksLabel = totalGoalTasks === 0 ? "No tasks today" : "Tasks Complete";
   const progressCards = [
-    { label: "Tasks Complete", value: `${completedGoalTasks}/${totalGoalTasks}`, color: colors.primary },
+    { label: tasksLabel, value: tasksValue, color: colors.primary },
     { label: "Day Streak", value: user.dayStreak.toString(), color: colors.success },
     { label: "Today's Progress", value: `${goalProgressPercentage}%`, color: colors.warning },
     { label: "Goals Active", value: goals.filter(g => g.status === 'active').length.toString(), color: colors.info },

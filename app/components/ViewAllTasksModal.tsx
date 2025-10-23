@@ -28,7 +28,7 @@ const { width } = Dimensions.get('window');
 
 export default function ViewAllTasksModal({ visible, onClose }: ViewAllTasksModalProps) {
   const { colors, isDark, isGalaxy } = useTheme();
-  const { tasks, goals, toggleTask } = useGoals();
+  const { tasks, goals, toggleTask, isGoalLocked } = useGoals();
   const [selectedFilter, setSelectedFilter] = useState<FilterType>('incomplete');
   const [selectedSort, setSelectedSort] = useState<SortType>('date-asc');
   const [showFilterMenu, setShowFilterMenu] = useState(false);
@@ -42,7 +42,7 @@ export default function ViewAllTasksModal({ visible, onClose }: ViewAllTasksModa
       const relatedGoal = task.goal_id ? goals.find(g => g.id === task.goal_id) : null;
       return {
         ...task,
-        goalTitle: relatedGoal?.title || 'No Goal',
+        goalTitle: relatedGoal ? `${relatedGoal.title}${isGoalLocked(task.goal_id || undefined) ? ' (Locked)' : ''}` : 'No Goal',
         goalColor: relatedGoal?.color || colors.primary,
         dueDate: task.due_at ? new Date(task.due_at) : null,
       };

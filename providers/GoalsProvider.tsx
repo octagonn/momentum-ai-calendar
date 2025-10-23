@@ -6,10 +6,12 @@ import { Goal } from "@/types/goal";
 import { supabase } from "@/lib/supabase-client";
 import { getItem, setItem } from "@/lib/storage";
 import { checkAndUpdateDayStreak } from "@/services/dayStreakService";
+import { useSubscription } from "./SubscriptionProvider";
 
 interface GoalsContextType {
   tasks: Task[];
   goals: Goal[];
+  isGoalLocked: (goalId: string | undefined) => boolean;
   toggleTask: (taskId: string) => void;
   updateGoal: (goalId: string, updates: Partial<Goal>) => void;
   addGoal: (goal: Goal, tasks?: any[]) => Promise<void>;
@@ -37,6 +39,8 @@ export const [GoalsProvider, useGoals] = createContextHook<GoalsContextType>(() 
   const [localTasks, setLocalTasks] = useState<Task[]>(defaultTasks);
   const [localGoals, setLocalGoals] = useState<Goal[]>(defaultGoals);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const { isPremium } = useSubscription();
+  const [lockedGoalIds, setLockedGoalIds] = useState<Set<string>>(new Set());
 
   // Monitor auth state changes and clear data on user change
   useEffect(() => {
@@ -274,6 +278,56 @@ export const [GoalsProvider, useGoals] = createContextHook<GoalsContextType>(() 
     }
   }, []);
 
+  // Compute locked goals whenever goals or subscription changes
+  useEffect(() => {
+    try {
+      if (isPremium) {
+        setLockedGoalIds(new Set());
+        return;
+      }
+      // Free tier: only 1 active (incomplete) goal accessible
+      // Choose the goal with the next closest upcoming target_date; if none, fall back to oldest created_at
+      const now = new Date();
+      const activeIncomplete = (localGoals || [])
+        .filter((g) => g.status === 'active' && g.progress !== 100);
+      if (activeIncomplete.length <= 1) {
+        setLockedGoalIds(new Set());
+        return;
+      }
+      const withFutureDates = activeIncomplete
+        .filter((g) => g.target_date && new Date(g.target_date) > now)
+        .sort((a, b) => new Date(a.target_date as string).getTime() - new Date(b.target_date as string).getTime());
+
+      let sorted: typeof activeIncomplete;
+      if (withFutureDates.length > 0) {
+        // Prefer soonest upcoming target date
+        sorted = [withFutureDates[0], ...activeIncomplete.filter(g => g !== withFutureDates[0])];
+      } else {
+        // Fallback: oldest created_at first
+        sorted = [...activeIncomplete].sort((a, b) => {
+          const ta = a.created_at ? new Date(a.created_at).getTime() : 0;
+          const tb = b.created_at ? new Date(b.created_at).getTime() : 0;
+          return ta - tb;
+        });
+      }
+      const accessible = sorted[0];
+      const locked = new Set<string>();
+      for (let i = 1; i < sorted.length; i++) {
+        if (sorted[i].id) locked.add(sorted[i].id);
+      }
+      // If some goals came from views with goal_id, include those too
+      (localGoals || []).forEach((g: any) => {
+        if (g.goal_id && locked.has(g.goal_id)) {
+          locked.add(g.goal_id);
+        }
+      });
+      setLockedGoalIds(locked);
+    } catch (e) {
+      console.warn('Error computing locked goals:', e);
+      setLockedGoalIds(new Set());
+    }
+  }, [localGoals, isPremium]);
+
   // Fetch data from Supabase
   const [isLoading, setIsLoading] = useState(false);
 
@@ -435,9 +489,17 @@ export const [GoalsProvider, useGoals] = createContextHook<GoalsContextType>(() 
     }
   }, [tasks?.length, fetchTasks]);
 
-  // Use local data
-  const tasks = localTasks;
+  // Filter tasks that belong to locked goals (no notifications, no calendar/home display)
+  const tasks = useMemo(() => {
+    if (!lockedGoalIds || lockedGoalIds.size === 0) return localTasks;
+    return localTasks.filter((t) => !t.goal_id || !lockedGoalIds.has(t.goal_id));
+  }, [localTasks, lockedGoalIds]);
   const goals = localGoals;
+
+  const isGoalLocked = useCallback((goalId?: string) => {
+    if (!goalId) return false;
+    return lockedGoalIds.has(goalId);
+  }, [lockedGoalIds]);
 
   const toggleTask = useCallback(async (taskId: string) => {
     if (!tasks) return;
@@ -747,6 +809,7 @@ export const [GoalsProvider, useGoals] = createContextHook<GoalsContextType>(() 
   return useMemo(() => ({
     tasks,
     goals,
+    isGoalLocked,
     toggleTask,
     updateGoal,
     addGoal,
@@ -757,5 +820,5 @@ export const [GoalsProvider, useGoals] = createContextHook<GoalsContextType>(() 
     getTodaysProgress,
     refreshTasks,
     refreshGoals,
-  }), [tasks, goals, isLoading, toggleTask, updateGoal, addGoal, deleteGoal, getTasksStats, getGoalProgress, getTodaysProgress, refreshTasks, refreshGoals]);
+  }), [tasks, goals, isLoading, isGoalLocked, toggleTask, updateGoal, addGoal, deleteGoal, getTasksStats, getGoalProgress, getTodaysProgress, refreshTasks, refreshGoals]);
 });

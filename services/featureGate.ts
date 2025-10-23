@@ -40,7 +40,7 @@ class FeatureGateService {
     // Free features (available to all)
     [Feature.BASIC_GOAL_CREATION]: {
       requiredTiers: ['free', 'premium', 'family'],
-      limit: 3, // Free users limited to 3 goals
+      limit: 1, // Free users limited to 1 active goal
       upgradeMessage: 'Upgrade to Premium to create unlimited goals and unlock AI-powered goal planning.',
       upgradeTitle: 'Goal Limit Reached',
     },
@@ -214,7 +214,7 @@ class FeatureGateService {
     limit: number;
   }> {
     const goalCount = await this.getUserGoalCount(userId);
-    const limit = this.userTier === 'free' ? 3 : Number.MAX_SAFE_INTEGER;
+    const limit = this.userTier === 'free' ? 1 : Number.MAX_SAFE_INTEGER;
     
     return {
       canCreateGoal: goalCount < limit,

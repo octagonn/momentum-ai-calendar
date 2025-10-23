@@ -34,9 +34,39 @@ export function buildSchedule(fields: InterviewFields): ScheduledSlot[] {
   return scheduledSlots;
 }
 
+export function buildScheduleWithDayTimes(options: {
+  targetDateISO: string;
+  preferredDays: DayOfWeek[];
+  dayTimes?: Partial<Record<DayOfWeek, string>>;
+  sessionMinutes: number;
+  startFromTomorrow?: boolean;
+}): ScheduledSlot[] {
+  const { targetDateISO, preferredDays, dayTimes = {}, sessionMinutes, startFromTomorrow = true } = options;
+  const targetDate = parseISO(targetDateISO);
+  const now = new Date();
+  const start = startFromTomorrow ? addDays(now, 1) : now;
+
+  const availableDates = getAvailableDates(start, targetDate, preferredDays);
+  // Ensure we generate sessions for every requested day per week until target
+  // getAvailableDates already returns every date matching preferredDays across the range
+  const scheduledSlots: ScheduledSlot[] = availableDates.map((date, index) => {
+    const dayIdx = date.getDay();
+    const dayName = DAY_NAMES[dayIdx] as DayOfWeek;
+    const timeForDay = dayTimes[dayName] || '09:00';
+    const dueAt = createDueAtTimestamp(date, timeForDay);
+    return {
+      title: `Session ${index + 1}`,
+      due_at: dueAt,
+      duration_minutes: sessionMinutes,
+      seq: index + 1,
+    };
+  });
+  return scheduledSlots;
+}
+
 function getAvailableDates(
-  startDate: Date, 
-  endDate: Date, 
+  startDate: Date,
+  endDate: Date,
   preferredDays: string[]
 ): Date[] {
   const availableDates: Date[] = [];
@@ -68,7 +98,7 @@ function getAvailableDates(
 }
 
 function createDueAtTimestamp(
-  date: Date, 
+  date: Date,
   timeOfDay: string | null | undefined
 ): string {
   // Start with the date at midnight

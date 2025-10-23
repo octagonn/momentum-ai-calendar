@@ -43,8 +43,38 @@ export const SubscriptionProvider: React.FC<SubscriptionProviderProps> = ({ chil
   const [modalTrigger, setModalTrigger] = useState<'goal_limit' | 'ai_goal' | 'color_picker' | 'analytics' | 'general'>('general');
   const [mockPremiumStatus, setMockPremiumStatus] = useState<boolean>(false); // For testing when DB migration is missing
   
-  const isPremium = userProfile?.isPremium || mockPremiumStatus || false;
-  const subscriptionTier = userProfile?.subscriptionTier || (mockPremiumStatus ? 'premium' : 'free');
+  // Compute premium with admin override: if admin_premium_until is in future or infinity and tier is premium/family
+  const adminOverrideActive = (() => {
+    const until = (userProfile as any)?.admin_premium_until as string | undefined;
+    const tier = (userProfile as any)?.admin_premium_tier as 'free' | 'premium' | 'family' | undefined;
+    if (!until || !tier) return false;
+    if (!(tier === 'premium' || tier === 'family')) return false;
+    if (until.toLowerCase() === 'infinity') return true;
+    const ts = Date.parse(until);
+    return !isNaN(ts) && ts > Date.now();
+  })();
+
+  // Use paid plan only if tier is premium/family AND status is active
+  const hasActivePaidPlan = (
+    (userProfile?.subscriptionTier === 'premium' || userProfile?.subscriptionTier === 'family') &&
+    (userProfile?.subscriptionStatus === 'active')
+  );
+
+  const isPremium = adminOverrideActive || hasActivePaidPlan || mockPremiumStatus || false;
+  const subscriptionTier = adminOverrideActive
+    ? (((userProfile as any)?.admin_premium_tier as SubscriptionTier) || 'premium')
+    : (userProfile?.subscriptionTier || (mockPremiumStatus ? 'premium' : 'free'));
+
+  // Auto-clear mock premium if DB says free and no admin override
+  useEffect(() => {
+    if (!adminOverrideActive && (!hasActivePaidPlan)) {
+      if (mockPremiumStatus) {
+        setMockPremiumStatus(false);
+        featureGate.setMockPremiumOverride(false);
+        savePersistentPremiumStatus(false);
+      }
+    }
+  }, [adminOverrideActive, hasActivePaidPlan, mockPremiumStatus]);
   
   useEffect(() => {
     if (authUser) {

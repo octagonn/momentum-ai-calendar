@@ -9,11 +9,13 @@ import {
   ActivityIndicator,
   Alert,
   Platform,
-  Linking,
+  ImageBackground,
 } from 'react-native';
-import { X, Crown, Check, Lock, Target, Palette, Bot, TrendingUp } from 'lucide-react-native';
+import { X, Check, Lock, Target, Palette, Bot, TrendingUp } from 'lucide-react-native';
+import { Image } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../providers/ThemeProvider';
+import { useSubscription } from '@/providers/SubscriptionProvider';
 import { useAuth } from '../../providers/AuthProvider';
 import { subscriptionService } from '../../services/subscriptionService';
 import { Subscription } from '../../lib/iap-wrapper';
@@ -31,7 +33,8 @@ export default function PremiumUpgradeModal({
   onSuccess,
   trigger = 'general' 
 }: PremiumUpgradeModalProps) {
-  const { colors, isDark } = useTheme();
+  const { colors, isDark, isGalaxy } = useTheme();
+  const { showUpgradeModal } = useSubscription();
   const { user } = useAuth();
   const insets = useSafeAreaInsets();
   
@@ -154,7 +157,14 @@ export default function PremiumUpgradeModal({
       presentationStyle="pageSheet"
       onRequestClose={onClose}
     >
-      <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <View style={[styles.container, { backgroundColor: isGalaxy ? 'rgba(0, 0, 0, 0.5)' : colors.background }]}> 
+        {isGalaxy && (
+          <ImageBackground 
+            source={require('@/assets/images/background.png')} 
+            style={StyleSheet.absoluteFillObject} 
+            resizeMode="cover"
+          />
+        )}
         {/* Header */}
         <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
           <TouchableOpacity onPress={onClose} style={styles.closeButton}>
@@ -170,7 +180,11 @@ export default function PremiumUpgradeModal({
           {/* Icon and Title */}
           <View style={styles.titleSection}>
             <View style={[styles.iconContainer, { backgroundColor: colors.primary }]}>
-              <Crown size={48} color={colors.background} />
+              <Image
+                source={require('@/assets/icon.png')}
+                style={{ width: 72, height: 72 }}
+                resizeMode="contain"
+              />
             </View>
             <Text style={[styles.title, { color: colors.text }]}>{title}</Text>
             <Text style={[styles.subtitle, { color: colors.textSecondary }]}>{subtitle}</Text>
@@ -278,18 +292,33 @@ export default function PremiumUpgradeModal({
           
           {/* Terms */}
           <View style={styles.termsSection}>
-            <Text style={[styles.termsText, { color: colors.textSecondary }]}>
+            <Text style={[styles.termsText, { color: colors.textSecondary }]}> 
               By subscribing, you agree to our{' '}
               <Text 
                 style={{ color: colors.primary }}
-                onPress={() => Linking.openURL('https://yourapp.com/terms')}
+                onPress={() => {
+                  // Navigate to Settings screen where Terms modal exists
+                  try {
+                    const { router } = require('expo-router');
+                    router.push('/(tabs)/settings');
+                  } catch {
+                    Alert.alert('Where to find Terms', 'Open Settings > Legal & Privacy to view the Terms.');
+                  }
+                }}
               >
                 Terms of Service
               </Text>
               {' '}and{' '}
               <Text 
                 style={{ color: colors.primary }}
-                onPress={() => Linking.openURL('https://yourapp.com/privacy')}
+                onPress={() => {
+                  try {
+                    const { router } = require('expo-router');
+                    router.push('/(tabs)/settings');
+                  } catch {
+                    Alert.alert('Where to find Privacy Policy', 'Open Settings > Legal & Privacy to view the Privacy Policy.');
+                  }
+                }}
               >
                 Privacy Policy
               </Text>
