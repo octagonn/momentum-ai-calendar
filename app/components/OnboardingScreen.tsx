@@ -10,25 +10,30 @@ import {
   KeyboardAvoidingView,
   Platform,
   Dimensions,
+  Image,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { ArrowRight, User, AtSign, Check } from 'lucide-react-native';
+import { ArrowRight, User, AtSign, Check, Mail, Lock, CheckCircle } from 'lucide-react-native';
 import { useTheme } from '../../providers/ThemeProvider';
 import { useAuth } from '../../providers/AuthProvider';
 import { supabase } from '../../lib/supabase-client';
 
 interface OnboardingScreenProps {
   onComplete: () => void;
+  onNavigateToSignIn?: () => void;
 }
 
 const { width, height } = Dimensions.get('window');
 
-export default function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
+export default function OnboardingScreen({ onComplete, onNavigateToSignIn }: OnboardingScreenProps) {
   const { colors } = useTheme();
-  const { user } = useAuth();
+  const { user, signUp } = useAuth();
   const [currentStep, setCurrentStep] = useState(0);
   const [fullName, setFullName] = useState('');
   const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [usernameError, setUsernameError] = useState('');
 
@@ -49,9 +54,19 @@ export default function OnboardingScreen({ onComplete }: OnboardingScreenProps) 
       content: "username"
     },
     {
+      title: "What's your email?",
+      subtitle: "We'll use this for your account",
+      content: "email"
+    },
+    {
+      title: "Create a password",
+      subtitle: "Keep your account secure",
+      content: "password"
+    },
+    {
       title: "All set!",
-      subtitle: "Your profile is ready to go",
-      content: "complete"
+      subtitle: "Check your email to verify your account",
+      content: "verification"
     }
   ];
 
@@ -114,42 +129,73 @@ export default function OnboardingScreen({ onComplete }: OnboardingScreenProps) 
         Alert.alert('Username Taken', 'Please choose a different username');
         return;
       }
+    } else if (currentStep === 3) {
+      // Email step
+      if (!email.trim()) {
+        Alert.alert('Required', 'Please enter your email');
+        return;
+      }
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email)) {
+        Alert.alert('Invalid Email', 'Please enter a valid email address');
+        return;
+      }
+    } else if (currentStep === 4) {
+      // Password step
+      if (!password.trim()) {
+        Alert.alert('Required', 'Please enter a password');
+        return;
+      }
+      if (password.length < 6) {
+        Alert.alert('Password Too Short', 'Password must be at least 6 characters long');
+        return;
+      }
+      if (password !== confirmPassword) {
+        Alert.alert('Password Mismatch', 'Passwords do not match');
+        return;
+      }
+      // Sign up the user
+      await handleSignUp();
+      return; // Don't increment step here, handleSignUp will do it
     }
 
     if (currentStep === steps.length - 1) {
-      // Complete onboarding
-      await completeOnboarding();
+      // Navigate to sign in
+      if (onNavigateToSignIn) {
+        onNavigateToSignIn();
+      }
     } else {
       setCurrentStep(currentStep + 1);
     }
   };
 
-  const completeOnboarding = async () => {
-    if (!user) return;
-
+  const handleSignUp = async () => {
     setIsLoading(true);
     try {
-      // Update user profile in database
-      const { error } = await supabase
-        .from('user_profiles')
-        .update({
-          full_name: fullName.trim(),
-          username: username.toLowerCase().trim(),
-          onboarding_completed: true,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', user.id);
-
+      // Sign up with Supabase
+      const { error } = await signUp(email, password);
+      
       if (error) {
-        console.error('Error updating profile:', error);
-        Alert.alert('Error', 'Failed to save profile. Please try again.');
+        Alert.alert('Sign Up Error', error.message);
+        setIsLoading(false);
         return;
       }
 
-      // Complete onboarding
-      onComplete();
+      // Store name and username in localStorage temporarily
+      // Will be saved to profile after email verification
+      try {
+        const pendingData = JSON.stringify({ fullName, username });
+        if (typeof window !== 'undefined' && window.localStorage) {
+          window.localStorage.setItem('pendingProfileData', pendingData);
+        }
+      } catch (e) {
+        console.log('Could not store pending profile data:', e);
+      }
+
+      // Move to verification screen
+      setCurrentStep(currentStep + 1);
     } catch (error) {
-      console.error('Error completing onboarding:', error);
+      console.error('Error during sign up:', error);
       Alert.alert('Error', 'Something went wrong. Please try again.');
     } finally {
       setIsLoading(false);
@@ -159,7 +205,11 @@ export default function OnboardingScreen({ onComplete }: OnboardingScreenProps) 
   const renderWelcomeStep = () => (
     <View style={styles.stepContent}>
       <View style={styles.iconContainer}>
-        <User size={80} color={colors.primary} />
+        <Image
+          source={require('@/assets/images/icon.png')}
+          style={styles.appIcon}
+          resizeMode="contain"
+        />
       </View>
       <Text style={[styles.stepTitle, { color: colors.text }]}>
         {steps[currentStep].title}
@@ -170,6 +220,20 @@ export default function OnboardingScreen({ onComplete }: OnboardingScreenProps) 
       <Text style={[styles.description, { color: colors.textSecondary }]}>
         We'll help you set up your profile so you can start achieving your goals with Momentum.
       </Text>
+      
+      {onNavigateToSignIn && (
+        <TouchableOpacity 
+          style={styles.signInLinkContainer}
+          onPress={onNavigateToSignIn}
+        >
+          <Text style={[styles.signInLinkText, { color: colors.textSecondary }]}>
+            Already have an account?{' '}
+            <Text style={[styles.signInLink, { color: colors.primary }]}>
+              Sign In
+            </Text>
+          </Text>
+        </TouchableOpacity>
+      )}
     </View>
   );
 
@@ -249,10 +313,94 @@ export default function OnboardingScreen({ onComplete }: OnboardingScreenProps) 
     </View>
   );
 
-  const renderCompleteStep = () => (
+  const renderEmailStep = () => (
+    <View style={styles.stepContent}>
+      <View style={styles.iconContainer}>
+        <Mail size={60} color={colors.primary} />
+      </View>
+      <Text style={[styles.stepTitle, { color: colors.text }]}>
+        {steps[currentStep].title}
+      </Text>
+      <Text style={[styles.stepSubtitle, { color: colors.textSecondary }]}>
+        {steps[currentStep].subtitle}
+      </Text>
+      
+      <View style={styles.inputContainer}>
+        <TextInput
+          style={[styles.textInput, { 
+            backgroundColor: colors.surface,
+            color: colors.text,
+            borderColor: colors.border 
+          }]}
+          placeholder="Enter your email address"
+          placeholderTextColor={colors.textSecondary}
+          value={email}
+          onChangeText={setEmail}
+          autoCapitalize="none"
+          autoCorrect={false}
+          autoComplete="email"
+          keyboardType="email-address"
+        />
+      </View>
+    </View>
+  );
+
+  const renderPasswordStep = () => (
+    <View style={styles.stepContent}>
+      <View style={styles.iconContainer}>
+        <Lock size={60} color={colors.primary} />
+      </View>
+      <Text style={[styles.stepTitle, { color: colors.text }]}>
+        {steps[currentStep].title}
+      </Text>
+      <Text style={[styles.stepSubtitle, { color: colors.textSecondary }]}>
+        {steps[currentStep].subtitle}
+      </Text>
+      
+      <View style={styles.inputContainer}>
+        <TextInput
+          style={[styles.textInput, { 
+            backgroundColor: colors.surface,
+            color: colors.text,
+            borderColor: colors.border 
+          }]}
+          placeholder="Enter your password"
+          placeholderTextColor={colors.textSecondary}
+          value={password}
+          onChangeText={setPassword}
+          autoCapitalize="none"
+          autoCorrect={false}
+          secureTextEntry
+        />
+      </View>
+
+      <View style={styles.inputContainer}>
+        <TextInput
+          style={[styles.textInput, { 
+            backgroundColor: colors.surface,
+            color: colors.text,
+            borderColor: colors.border 
+          }]}
+          placeholder="Re-enter your password"
+          placeholderTextColor={colors.textSecondary}
+          value={confirmPassword}
+          onChangeText={setConfirmPassword}
+          autoCapitalize="none"
+          autoCorrect={false}
+          secureTextEntry
+        />
+      </View>
+
+      <Text style={[styles.helpText, { color: colors.textSecondary }]}>
+        Password must be at least 6 characters long.
+      </Text>
+    </View>
+  );
+
+  const renderVerificationStep = () => (
     <View style={styles.stepContent}>
       <View style={[styles.iconContainer, { backgroundColor: colors.success + '20' }]}>
-        <Check size={80} color={colors.success} />
+        <CheckCircle size={60} color={colors.success} />
       </View>
       <Text style={[styles.stepTitle, { color: colors.text }]}>
         {steps[currentStep].title}
@@ -261,7 +409,7 @@ export default function OnboardingScreen({ onComplete }: OnboardingScreenProps) 
         {steps[currentStep].subtitle}
       </Text>
       <Text style={[styles.description, { color: colors.textSecondary }]}>
-        Welcome to Momentum, {fullName}! You're all set to start your journey towards achieving your goals.
+        We've sent a verification link to {email}. Please check your email and click the link to verify your account.
       </Text>
     </View>
   );
@@ -274,8 +422,12 @@ export default function OnboardingScreen({ onComplete }: OnboardingScreenProps) 
         return renderNameStep();
       case 'username':
         return renderUsernameStep();
-      case 'complete':
-        return renderCompleteStep();
+      case 'email':
+        return renderEmailStep();
+      case 'password':
+        return renderPasswordStep();
+      case 'verification':
+        return renderVerificationStep();
       default:
         return renderWelcomeStep();
     }
@@ -326,7 +478,8 @@ export default function OnboardingScreen({ onComplete }: OnboardingScreenProps) 
               disabled={isLoading}
             >
               <Text style={styles.nextButtonText}>
-                {currentStep === steps.length - 1 ? 'Get Started' : 'Continue'}
+                {isLoading ? 'Please wait...' : 
+                 currentStep === steps.length - 1 ? 'Go to Sign In' : 'Continue'}
               </Text>
               <ArrowRight size={20} color="white" />
             </TouchableOpacity>
@@ -376,6 +529,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginBottom: 32,
   },
+  appIcon: {
+    width: 100,
+    height: 100,
+  },
   stepTitle: {
     fontSize: 28,
     fontWeight: '700',
@@ -392,6 +549,18 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 24,
     paddingHorizontal: 20,
+  },
+  signInLinkContainer: {
+    marginTop: 32,
+    paddingVertical: 12,
+  },
+  signInLinkText: {
+    fontSize: 16,
+    textAlign: 'center',
+  },
+  signInLink: {
+    fontWeight: '600',
+    textDecorationLine: 'underline',
   },
   inputContainer: {
     width: '100%',
