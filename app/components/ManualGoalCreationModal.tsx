@@ -20,6 +20,7 @@ import { useTheme } from '../../providers/ThemeProvider';
 import { useAuth } from '../../providers/AuthProvider';
 import { useUser } from '../../providers/UserProvider';
 import { useSubscription } from '../../providers/SubscriptionProvider';
+import { useGoals } from '../../providers/GoalsProvider';
 import { supabase, createNewSupabaseClient } from '../../lib/supabase-client';
 import ColorPicker from './ColorPicker';
 import { getNextAvailableColor } from '../../lib/colorUtils';
@@ -40,6 +41,7 @@ export default function ManualGoalCreationModal({
   const { user } = useAuth();
   const { user: userProfile } = useUser();
   const { isPremium: subscriptionPremium, showUpgradeModal } = useSubscription();
+  const { addGoal, refreshGoals, refreshTasks } = useGoals();
   const insets = useSafeAreaInsets();
   
   const [title, setTitle] = useState('');
@@ -48,6 +50,20 @@ export default function ManualGoalCreationModal({
   const [color, setColor] = useState('#3B82F6');
   const [loading, setLoading] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
+  // Helpers to avoid timezone shifts when converting between string and Date
+  const toYMD = (date: Date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  // Create a local Date for the given YYYY-MM-DD, using noon to avoid UTC rollbacks
+  const localNoonFromYMD = (ymd: string) => {
+    const [y, m, d] = ymd.split('-').map((v) => parseInt(v, 10));
+    return new Date(y, (m || 1) - 1, d || 1, 12, 0, 0);
+  };
+
   
   // Use both sources of premium status for maximum compatibility  
   const isPremium = userProfile?.isPremium || subscriptionPremium || false;
@@ -68,49 +84,21 @@ export default function ManualGoalCreationModal({
       // Only use custom color if user is premium
       const goalColor = isPremium ? color : featureGate.getDefaultGoalColor();
       
-      const goalData = {
+      const newGoal: any = {
         title: title.trim(),
-        description: description.trim() || null,
-        target_date: targetDate ? new Date(targetDate).toISOString() : null,
+        description: description.trim() || undefined,
         status: 'active',
         color: goalColor,
+        user_id: user.id,
+        target_date: targetDate ? localNoonFromYMD(targetDate).toISOString() : undefined,
       };
 
-      // Try to insert with color field first
-      let { data: goal, error } = await supabase
-        .from('goals')
-        .insert([{
-          user_id: user.id,
-          ...goalData,
-        }])
-        .select()
-        .single();
-
-      // If color field doesn't exist, try without it
-      if (error && error.message.includes('color')) {
-        console.log('Color column not available, creating goal without color field');
-        const fallbackResult = await supabase
-          .from('goals')
-          .insert([{
-            user_id: user.id,
-            title: goalData.title,
-            description: goalData.description,
-            target_date: goalData.target_date,
-            status: goalData.status,
-          }])
-          .select()
-          .single();
-        
-        goal = fallbackResult.data;
-        error = fallbackResult.error;
-      }
-
-      if (error) {
-        throw error;
-      }
-
-      console.log('Manual goal created:', goal);
-      onGoalCreated(goal);
+      // Use GoalsProvider for optimistic UI update and persistence
+      await addGoal(newGoal);
+      onGoalCreated({ id: newGoal.id, ...newGoal });
+      // Ensure all dashboards reflect immediately
+      await refreshGoals();
+      await refreshTasks();
       onClose();
       resetForm();
     } catch (error: any) {
@@ -137,11 +125,8 @@ export default function ManualGoalCreationModal({
   const handleDateChange = (event: any, selectedDate?: Date) => {
     setShowDatePicker(Platform.OS === 'ios');
     if (selectedDate) {
-      // Use local date to avoid timezone issues
-      const year = selectedDate.getFullYear();
-      const month = String(selectedDate.getMonth() + 1).padStart(2, '0');
-      const day = String(selectedDate.getDate()).padStart(2, '0');
-      setTargetDate(`${year}-${month}-${day}`);
+      // Normalize to YYYY-MM-DD string in local time
+      setTargetDate(toYMD(selectedDate));
     }
   };
 
@@ -230,7 +215,8 @@ export default function ManualGoalCreationModal({
             </Text>
             {showDatePicker && (
               <DateTimePicker
-                value={targetDate ? new Date(targetDate) : new Date()}
+                // Use local date object (no parsing of YYYY-MM-DD as UTC)
+                value={targetDate ? localNoonFromYMD(targetDate) : new Date()}
                 mode="date"
                 display={Platform.OS === 'ios' ? 'spinner' : 'default'}
                 onChange={handleDateChange}

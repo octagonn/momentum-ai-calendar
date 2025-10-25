@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { AppState } from 'react-native';
 import { useAuth } from './AuthProvider';
 import { useUser } from './UserProvider';
 import { subscriptionService, SubscriptionTier } from '../services/subscriptionService';
@@ -54,27 +55,22 @@ export const SubscriptionProvider: React.FC<SubscriptionProviderProps> = ({ chil
     return !isNaN(ts) && ts > Date.now();
   })();
 
-  // Use paid plan only if tier is premium/family AND status is active
+  // Use paid plan if tier is premium/family AND status is active or trialing
   const hasActivePaidPlan = (
     (userProfile?.subscriptionTier === 'premium' || userProfile?.subscriptionTier === 'family') &&
-    (userProfile?.subscriptionStatus === 'active')
+    (userProfile?.subscriptionStatus === 'active' || userProfile?.subscriptionStatus === 'trialing')
   );
 
+  // Source of truth: database values from userProfile. Admin override augments DB.
+  // In Expo Go/testing, allow mockPremiumStatus to reflect simulated purchases in UI.
   const isPremium = adminOverrideActive || hasActivePaidPlan || mockPremiumStatus || false;
   const subscriptionTier = adminOverrideActive
     ? (((userProfile as any)?.admin_premium_tier as SubscriptionTier) || 'premium')
-    : (userProfile?.subscriptionTier || (mockPremiumStatus ? 'premium' : 'free'));
+    : (mockPremiumStatus ? 'premium' : (userProfile?.subscriptionTier || 'free'));
 
-  // Auto-clear mock premium if DB says free and no admin override
-  useEffect(() => {
-    if (!adminOverrideActive && (!hasActivePaidPlan)) {
-      if (mockPremiumStatus) {
-        setMockPremiumStatus(false);
-        featureGate.setMockPremiumOverride(false);
-        savePersistentPremiumStatus(false);
-      }
-    }
-  }, [adminOverrideActive, hasActivePaidPlan, mockPremiumStatus]);
+  // Note: We no longer auto-clear mock premium when DB shows free. This ensures
+  // simulated purchases and manual testing can enable Premium reliably in Expo Go.
+  // Use resetPremiumStatus() to clear the mock flag when needed.
   
   useEffect(() => {
     if (authUser) {
@@ -84,10 +80,19 @@ export const SubscriptionProvider: React.FC<SubscriptionProviderProps> = ({ chil
     }
   }, [authUser]);
 
-  // Load persistent premium status on startup
+  // Re-verify receipt on foreground to reflect App Store changes (renewal/expiry)
   useEffect(() => {
-    loadPersistentPremiumStatus();
-  }, []);
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active' && authUser) {
+        checkSubscriptionStatus();
+      }
+    });
+    return () => sub.remove();
+  }, [authUser, checkSubscriptionStatus]);
+
+  // In dev, we previously supported a mock premium. We no longer auto-load
+  // mock state so DB remains the single source of truth. Uncomment for testing only.
+  // useEffect(() => { loadPersistentPremiumStatus(); }, []);
 
   // Cleanup modal state when user changes
   useEffect(() => {

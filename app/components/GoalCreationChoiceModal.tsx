@@ -7,7 +7,7 @@ import {
   TouchableOpacity,
   Alert,
 } from 'react-native';
-import { X, Edit3, Sparkles, Target, Lock } from 'lucide-react-native';
+import { X, Sparkles, Target, Lock } from 'lucide-react-native';
 import { Image } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../providers/ThemeProvider';
@@ -81,7 +81,7 @@ export default function GoalCreationChoiceModal({
               activeOpacity={0.7}
             >
               <View style={[styles.optionIcon, { backgroundColor: `${colors.primary}15` }]}> 
-                <Image source={require('@/assets/images/ai-chat-icon.png')} style={{ width: 28, height: 28 }} resizeMode="contain" />
+                <Image source={require('@/assets/images/ai-assistant-icon-2.png')} style={{ width: 28, height: 28 }} resizeMode="contain" />
               </View>
               <View style={styles.optionContent}>
                 <Text style={[styles.optionTitle, { color: colors.text }]}>
@@ -120,7 +120,7 @@ export default function GoalCreationChoiceModal({
               activeOpacity={0.7}
             >
               <View style={[styles.optionIcon, { backgroundColor: `${colors.info}15` }]}>
-                <Edit3 size={24} color={colors.info} />
+                <Image source={require('@/assets/images/edit-utensil-icon.png')} style={{ width: 26, height: 26 }} resizeMode="contain" />
               </View>
               <View style={styles.optionContent}>
                 <Text style={[styles.optionTitle, { color: colors.text }]}>

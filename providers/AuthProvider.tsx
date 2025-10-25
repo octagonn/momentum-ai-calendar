@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
+import { Platform } from 'react-native';
 import { Session, User, AuthError } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase-client';
 
@@ -6,7 +7,7 @@ interface AuthContextType {
   user: User | null;
   session: Session | null;
   loading: boolean;
-  signUp: (email: string, password: string) => Promise<{ error: AuthError | null }>;
+  signUp: (email: string, password: string, metadata?: Record<string, any>) => Promise<{ error: AuthError | null }>;
   signIn: (email: string, password: string) => Promise<{ error: AuthError | null }>;
   signOut: () => Promise<{ error: AuthError | null }>;
   resendVerification: (email: string) => Promise<{ error: AuthError | null }>;
@@ -42,6 +43,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         if (error) {
           console.error('Error getting session:', error);
         } else {
+          console.log('AuthProvider: initial session user:', session?.user?.id || 'none');
           setSession(session);
           setUser(session?.user ?? null);
         }
@@ -57,8 +59,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
+        console.log('AuthProvider: onAuthStateChange', event, 'user:', session?.user?.id || 'none');
         setSession(session);
-        setUser(session?.user ?? null);
+        // Keep user object stable when ID is unchanged to avoid heavy downstream effects on TOKEN_REFRESHED
+        setUser((prev) => {
+          const next = session?.user ?? null;
+          if ((prev?.id ?? null) === (next?.id ?? null)) return prev;
+          return next;
+        });
         setLoading(false);
       }
     );
@@ -66,13 +74,22 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     return () => subscription.unsubscribe();
   }, []);
 
-  const signUp = async (email: string, password: string) => {
+  const signUp = async (email: string, password: string, metadata?: Record<string, any>) => {
     try {
+      // Defensive: block sign up if age provided is under 13
+      const age = typeof metadata?.age === 'number' ? metadata.age : undefined;
+      if (age !== undefined && age < 13) {
+        return { error: { name: 'AuthError', message: 'You must be at least 13 years old to create an account.' } as AuthError };
+      }
+      const redirectTo = Platform.OS === 'web'
+        ? `${window.location.origin}/auth/callback`
+        : 'momentum://auth/callback';
       const { error } = await supabase.auth.signUp({
         email,
         password,
         options: {
-          emailRedirectTo: `${window.location.origin}/auth/callback`,
+          emailRedirectTo: redirectTo,
+          data: metadata,
         },
       });
       return { error };
@@ -104,11 +121,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const resendVerification = async (email: string) => {
     try {
+      const redirectTo = Platform.OS === 'web'
+        ? `${window.location.origin}/auth/callback`
+        : 'momentum://auth/callback';
       const { error } = await supabase.auth.resend({
         type: 'signup',
         email,
         options: {
-          emailRedirectTo: `${window.location.origin}/auth/callback`,
+          emailRedirectTo: redirectTo,
         },
       });
       return { error };

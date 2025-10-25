@@ -26,8 +26,23 @@ class SubscriptionService {
   private pendingPurchaseResolve: ((value: boolean) => void) | null = null;
   private pendingPurchaseReject: ((reason?: any) => void) | null = null;
 
-  // SKU configured in App Store Connect (7-day trial handled by Apple config)
+  // Default SKU configured in App Store Connect (7-day trial handled by Apple config)
   public readonly PREMIUM_SKU = 'com.momentumaicalendar.premium.monthly';
+  // Allow multiple SKUs via env (comma-separated), fallback to default
+  private readonly productSkus: string[] = (() => {
+    try {
+      // Read from Expo env if available
+      const raw = (Constants?.expoConfig?.extra?.iosPremiumSkus
+        || (Constants as any)?.manifestExtra?.iosPremiumSkus
+        || (process as any)?.env?.EXPO_PUBLIC_IOS_PREMIUM_SKUS
+        || '').toString();
+      const list = raw.split(',').map((s: string) => s.trim()).filter(Boolean);
+      const unique = Array.from(new Set([this.PREMIUM_SKU, ...list]));
+      return unique;
+    } catch {
+      return [this.PREMIUM_SKU];
+    }
+  })();
 
   private constructor() {}
 
@@ -40,10 +55,14 @@ class SubscriptionService {
 
   async initialize(userId: string): Promise<void> {
     if (this.initialized && this.currentUserId === userId) {
+      console.log('SubscriptionService: Already initialized for user:', userId);
       return;
     }
 
     try {
+      console.log('SubscriptionService: Initializing for user:', userId);
+      console.log('SubscriptionService: IAP available:', isIapAvailable, 'isWeb:', this.isWeb);
+      
       if (!isIapAvailable || this.isWeb) {
         console.log('IAP unavailable (Expo Go/Web or missing native module). Skipping native init.');
         this.currentUserId = userId;
@@ -51,6 +70,7 @@ class SubscriptionService {
         return;
       }
 
+      console.log('SubscriptionService: Initializing IAP connection...');
       await iapWrapper.initConnection();
       await iapWrapper.flushFailedPurchasesCachedAsPendingAndroid();
 
@@ -58,10 +78,14 @@ class SubscriptionService {
       this.initialized = true;
 
       // Set up listeners once
+      console.log('SubscriptionService: Setting up purchase listeners...');
       this.setupPurchaseListeners();
 
       // Sync subscription status with backend
+      console.log('SubscriptionService: Syncing subscription status...');
       await this.syncSubscriptionStatus();
+      
+      console.log('SubscriptionService: Initialization complete');
     } catch (error) {
       console.error('Failed to initialize IAP:', error);
       if (isIapAvailable) throw error;
@@ -90,7 +114,9 @@ class SubscriptionService {
         }
       } catch (err) {
         console.error('Error processing purchase:', err);
-        if (this.pendingPurchaseReject) this.pendingPurchaseReject(err);
+        if (this.pendingPurchaseReject) {
+          this.pendingPurchaseReject(err);
+        }
         this.pendingPurchaseResolve = null;
         this.pendingPurchaseReject = null;
       }
@@ -98,7 +124,9 @@ class SubscriptionService {
 
     this.purchaseErrorSub = iapWrapper.purchaseErrorListener((err) => {
       console.error('IAP error:', err);
-      if (this.pendingPurchaseReject) this.pendingPurchaseReject(err);
+      if (this.pendingPurchaseReject) {
+        this.pendingPurchaseReject(err);
+      }
       this.pendingPurchaseResolve = null;
       this.pendingPurchaseReject = null;
     });
@@ -120,7 +148,7 @@ class SubscriptionService {
           }
         ];
       }
-      const subs = await iapWrapper.getSubscriptions({ skus: [this.PREMIUM_SKU] });
+      const subs = await iapWrapper.getSubscriptions({ skus: this.productSkus });
       return subs;
     } catch (error) {
       console.error('Error fetching subscriptions:', error);
@@ -128,7 +156,7 @@ class SubscriptionService {
     }
   }
 
-  async purchaseSubscription(): Promise<boolean> {
+  async purchaseSubscription(sku?: string): Promise<boolean> {
     try {
       console.log('Purchase attempt - iap env:', iapEnvironment);
       
@@ -165,17 +193,27 @@ class SubscriptionService {
         });
       }
       
-      console.log('Attempting real purchase with SKU:', this.PREMIUM_SKU);
+      const targetSku = sku && this.productSkus.includes(sku) ? sku : this.productSkus[0];
+      console.log('Attempting real purchase with SKU:', targetSku);
+      console.log('Available SKUs:', this.productSkus);
+      
+      if (!targetSku) {
+        throw new Error('No valid subscription SKU found');
+      }
+      
       const result = new Promise<boolean>((resolve, reject) => {
         this.pendingPurchaseResolve = resolve;
         this.pendingPurchaseReject = reject;
       });
-      await iapWrapper.requestSubscription({ sku: this.PREMIUM_SKU });
+      
+      console.log('Calling iapWrapper.requestSubscription...');
+      await iapWrapper.requestSubscription({ sku: targetSku });
       console.log('Purchase request sent, waiting for result...');
       return await result;
     } catch (error) {
       console.error('Purchase error:', error);
-      Alert.alert('Purchase Failed', (error as any)?.message || 'An error occurred during purchase');
+      // Don't show alert here - let the modal handle the error display
+      // Just return false to indicate failure
       return false;
     }
   }
@@ -215,7 +253,7 @@ class SubscriptionService {
       const { error: authError } = await supa.auth.updateUser({
         data: {
           subscription_tier: 'premium',
-          subscription_status: 'active',
+          subscription_status: 'trialing',
           is_premium: true,
           trial_ends_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
         }
@@ -231,6 +269,13 @@ class SubscriptionService {
     }
 
     console.log('Successfully simulated premium upgrade for user:', this.currentUserId);
+
+    // Hint: in Expo Go, some components rely on the in-memory featureGate too.
+    // Try to trigger a profile refresh by invoking a lightweight update.
+    try {
+      const supa = supabase as any;
+      await supa.from('user_profiles').update({ updated_at: new Date().toISOString() }).eq('id', this.currentUserId);
+    } catch {}
   }
 
   async restorePurchases(): Promise<boolean> {
@@ -268,11 +313,12 @@ class SubscriptionService {
       const purchases = await iapWrapper.getAvailablePurchases();
       // Find latest iOS receipt among matching product id
       const latest = purchases
-        .filter((p: any) => p.productId === this.PREMIUM_SKU)
+        .filter((p: any) => this.productSkus.includes(p.productId))
         .sort((a: any, b: any) => (Number(b.transactionDate) || 0) - (Number(a.transactionDate) || 0))[0];
 
       if (latest?.transactionReceipt) {
         const verified = await this.verifyAndApplyEntitlement(latest.transactionReceipt);
+        // DB is the source of truth; verified indicates DB updated to premium
         if (verified) Alert.alert('Success', 'Your purchases have been restored');
         else Alert.alert('No Active Subscription', 'No active subscription found');
         return verified;
@@ -290,23 +336,23 @@ class SubscriptionService {
     try {
       if (!isIapAvailable || this.isWeb) {
         // In Expo Go / Web, default to free tier
-        return { tier: 'free', status: 'active', isActive: false };
+        return { tier: 'free', status: 'expired', isActive: false };
       }
       // Fetch latest available purchases and verify
       const purchases = await iapWrapper.getAvailablePurchases();
       const latest = purchases
-        .filter((p: any) => p.productId === this.PREMIUM_SKU)
+        .filter((p: any) => this.productSkus.includes(p.productId))
         .sort((a: any, b: any) => (Number(b.transactionDate) || 0) - (Number(a.transactionDate) || 0))[0];
       if (latest?.transactionReceipt) {
         const entitlement = await this.verifyReceipt(latest.transactionReceipt);
         return this.entitlementToSubscriptionInfo(entitlement);
       }
-      return { tier: 'free', status: 'active', isActive: false };
+      return { tier: 'free', status: 'expired', isActive: false };
     } catch (error) {
       console.error('Error getting subscription info:', error);
       return {
         tier: 'free',
-        status: 'active',
+        status: 'expired',
         isActive: false,
       };
     }
@@ -323,13 +369,15 @@ class SubscriptionService {
         originalPurchaseDate: entitlement.originalPurchaseDate ? new Date(entitlement.originalPurchaseDate) : undefined,
       };
     }
-    return { tier: 'free', status: 'active', isActive: false };
+    // Non-active entitlement maps to non-active state
+    return { tier: 'free', status: 'expired', isActive: false };
   }
 
   async syncSubscriptionStatus(): Promise<void> {
     if (!this.currentUserId) return;
 
     try {
+      // Always derive from verified receipt in native builds; in Expo/Web, leave DB as-is
       if (!isIapAvailable || this.isWeb) return;
       const subInfo = await this.getSubscriptionInfo();
 

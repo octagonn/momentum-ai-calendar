@@ -69,6 +69,7 @@ export default function CalendarScreen() {
   const [currentDate, setCurrentDate] = useState<Date>(new Date());
   const [showMonthView, setShowMonthView] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [realtimeRefreshKey, setRealtimeRefreshKey] = useState(0);
   
   // Animation values for swipe gestures
   const translateX = useRef(new Animated.Value(0)).current;
@@ -145,6 +146,44 @@ export default function CalendarScreen() {
 
       if (error) {
         console.error('Error fetching tasks:', error);
+        // Retry once on auth/RLS errors after session refresh
+        if ((error as any)?.code === '42501' || (error as any)?.message?.includes('JWT') || (error as any)?.message?.includes('permission denied') || (error as any)?.message?.includes('Unauthorized')) {
+          try {
+            await supabase.auth.refreshSession();
+            let retry = await supabase
+              .from('tasks')
+              .select(`
+                *,
+                goal:goals(id, title, description, color)
+              `)
+              .eq('user_id', user.id)
+              .order('due_at', { ascending: true });
+            if (retry.error && (retry.error.message.includes('color') || retry.error.message.includes('column') || retry.error.message.includes('schema'))) {
+              retry = await supabase
+                .from('tasks')
+                .select(`
+                  *,
+                  goal:goals(id, title, description)
+                `)
+                .eq('user_id', user.id)
+                .order('due_at', { ascending: true });
+              if (retry.data) {
+                retry.data = retry.data.map((task: any) => ({
+                  ...task,
+                  goal: task.goal ? { ...task.goal, color: '#3B82F6' } : task.goal
+                }));
+              }
+            }
+            if (retry.error) {
+              console.error('Retry error fetching tasks:', retry.error);
+              return;
+            }
+            setTasks(retry.data || []);
+            return;
+          } catch (e) {
+            console.warn('Task fetch retry after refresh failed:', e);
+          }
+        }
         return;
       }
 
@@ -167,6 +206,25 @@ export default function CalendarScreen() {
 
       if (error) {
         console.error('Error fetching goals:', error);
+        if ((error as any)?.code === '42501' || (error as any)?.message?.includes('JWT') || (error as any)?.message?.includes('permission denied') || (error as any)?.message?.includes('Unauthorized')) {
+          try {
+            await supabase.auth.refreshSession();
+            const retry = await supabase
+              .from('goals')
+              .select('*')
+              .eq('user_id', user.id)
+              .eq('status', 'active')
+              .order('created_at', { ascending: false });
+            if (retry.error) {
+              console.error('Retry error fetching goals:', retry.error);
+              return;
+            }
+            setGoals(retry.data || []);
+            return;
+          } catch (e) {
+            console.warn('Goal fetch retry after refresh failed:', e);
+          }
+        }
         return;
       }
 
@@ -294,15 +352,16 @@ export default function CalendarScreen() {
       tasksSubscription.unsubscribe();
       goalsSubscription.unsubscribe();
     };
-  }, [user, fetchTasks, fetchGoals]);
+  }, [user, fetchTasks, fetchGoals, realtimeRefreshKey]);
 
   // Refresh data when app comes back to foreground
   useEffect(() => {
     const handleAppStateChange = (nextAppState: string) => {
       if (nextAppState === 'active' && user) {
-        // App has come to the foreground, refresh data
-        fetchGoals();
-        fetchTasks();
+        console.log('CalendarScreen: App became active - refreshing data and realtime');
+        Promise.all([fetchGoals(), fetchTasks()]).catch(() => {});
+        // Reinitialize realtime listeners to avoid stale connections
+        setRealtimeRefreshKey((k) => k + 1);
       }
     };
 

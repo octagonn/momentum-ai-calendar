@@ -81,7 +81,12 @@ export const iapWrapper = {
     if (!RNIap || isWeb) {
       throw new Error('IAP_NOT_AVAILABLE');
     }
-    return RNIap.requestSubscription(options);
+    try {
+      return RNIap.requestSubscription(options);
+    } catch (error) {
+      console.error('IAP requestSubscription error:', error);
+      throw error;
+    }
   },
 
   async getAvailablePurchases() {
@@ -106,7 +111,12 @@ export const iapWrapper = {
       console.log('IAP purchaseUpdatedListener skipped (IAP unavailable or web)');
       return { remove: () => {} };
     }
-    return RNIap.purchaseUpdatedListener(callback);
+    try {
+      return RNIap.purchaseUpdatedListener(callback);
+    } catch (error) {
+      console.error('IAP purchaseUpdatedListener error:', error);
+      return { remove: () => {} };
+    }
   },
 
   purchaseErrorListener(callback: MockPurchaseErrorListener) {
@@ -114,7 +124,12 @@ export const iapWrapper = {
       console.log('IAP purchaseErrorListener skipped (IAP unavailable or web)');
       return { remove: () => {} };
     }
-    return RNIap.purchaseErrorListener(callback);
+    try {
+      return RNIap.purchaseErrorListener(callback);
+    } catch (error) {
+      console.error('IAP purchaseErrorListener error:', error);
+      return { remove: () => {} };
+    }
   },
 };
 
