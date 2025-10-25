@@ -20,6 +20,15 @@ export interface AIResponse {
   };
 }
 
+export interface UserContext {
+  age?: number | null;
+  gender?: string | null;
+  heightCm?: number | null;
+  weightKg?: number | null;
+  unitSystem?: 'imperial' | 'metric' | null;
+  dateOfBirth?: string | null; // YYYY-MM-DD
+}
+
 class AIService {
   private model: any;
   private proModel: any;
@@ -139,7 +148,7 @@ class AIService {
     return `${hhStr}:${mmStr}`;
   }
 
-  async generateResponse(messages: ChatMessage[]): Promise<{success: boolean, message: string}> {
+	async generateResponse(messages: ChatMessage[], userContext?: UserContext): Promise<{success: boolean, message: string}> {
     console.log('🤖 AI Service Debug Info:');
     console.log('- Model available:', !!this.model);
     console.log('- API Key available:', !!process.env.EXPO_PUBLIC_GEMINI_API_KEY);
@@ -148,10 +157,10 @@ class AIService {
     console.log('- Last message:', messages[messages.length - 1]?.content);
     
     // Always try Gemini API first if we have a key
-    if (process.env.EXPO_PUBLIC_GEMINI_API_KEY && process.env.EXPO_PUBLIC_GEMINI_API_KEY !== 'your_gemini_api_key_here') {
+		if (process.env.EXPO_PUBLIC_GEMINI_API_KEY && process.env.EXPO_PUBLIC_GEMINI_API_KEY !== 'your_gemini_api_key_here') {
       console.log('🚀 Attempting Gemini API call...');
       try {
-        const response = await this.callGeminiAPI(messages);
+				const response = await this.callGeminiAPI(messages, userContext);
         console.log('✅ Gemini API response received');
         return { success: true, message: response.content };
       } catch (error: any) {
@@ -172,14 +181,16 @@ class AIService {
     return { success: true, message: mockResponse.content };
   }
 
-  private async callGeminiAPI(messages: ChatMessage[]): Promise<AIResponse> {
+	private async callGeminiAPI(messages: ChatMessage[], userContext?: UserContext): Promise<AIResponse> {
     if (!this.model) {
       throw new Error('Gemini model not initialized');
     }
 
     try {
       // Create a system prompt to guide the AI's behavior
-      const systemPrompt = `You are a helpful AI coach for goal setting and planning. Your role is to:
+			const ctx = userContext || {};
+			const contextBlock = `USER CONTEXT (use only if relevant to calibrate guidance; never echo private data):\n- Age: ${ctx.age ?? 'N/A'}\n- Gender: ${ctx.gender ?? 'N/A'}\n- Height (cm): ${ctx.heightCm ?? 'N/A'}\n- Weight (kg): ${ctx.weightKg ?? 'N/A'}\n- Units: ${ctx.unitSystem ?? 'N/A'}`;
+			const systemPrompt = `You are a helpful AI coach for goal setting and planning. Your role is to:
 
           **CRITICAL RULE: Ask ONLY ONE question at a time. Never ask multiple questions in a single response.**
 
@@ -189,6 +200,8 @@ class AIService {
           4. Keep responses concise and focused (1-2 sentences max)
           5. Build on previous answers to create a natural conversation flow
           6. When you have enough information to create a plan, say "I have all the information I need to create your personalized plan. Let me put together a structured goal and training schedule for you."
+
+          ${contextBlock}
 
           Information you need to gather (ask ONE at a time):
           - What is their specific goal?
@@ -318,7 +331,9 @@ class AIService {
     };
   }
 
-  async generateGoalPlan(goalData: any): Promise<any> {
+  async generateGoalPlan(goalData: any, userContext?: UserContext): Promise<any> {
+    const ctx = userContext || {};
+    const contextText = `\n\nUSER CONTEXT (use only to calibrate plan; never echo private data):\n- Age: ${ctx.age ?? 'N/A'}\n- Gender: ${ctx.gender ?? 'N/A'}\n- Height (cm): ${ctx.heightCm ?? 'N/A'}\n- Weight (kg): ${ctx.weightKg ?? 'N/A'}\n- Units: ${ctx.unitSystem ?? 'N/A'}`;
     const prompt = `Create a detailed goal plan for:
     - Goal: ${goalData.title}
     - Description: ${goalData.description}
@@ -326,6 +341,7 @@ class AIService {
     - Target: ${goalData.target}
     - Timeline: ${goalData.timeline}
     - Availability: ${goalData.availability}
+    ${contextText}
 
     Please provide a structured plan with:
     1. Weekly milestones
@@ -338,7 +354,7 @@ class AIService {
       { role: 'user', content: prompt }
     ];
 
-    const response = await this.generateResponse(messages);
+    const response = await this.generateResponse(messages, userContext);
     
     // Try to parse as JSON, fallback to structured text
     try {
@@ -367,10 +383,10 @@ class AIService {
     }
   }
 
-  async generateGoalPlanWithTasks(goalData: any): Promise<{ goal: any; tasks: any[] }> {
+  async generateGoalPlanWithTasks(goalData: any, userContext?: UserContext): Promise<{ goal: any; tasks: any[] }> {
     console.log('🎯 Generating goal plan with tasks:', goalData);
     
-    const plan = await this.generateGoalPlan(goalData);
+    const plan = await this.generateGoalPlan(goalData, userContext);
     
     // Generate tasks from the plan
     const tasks = this.generateTasksFromPlan(plan, goalData);

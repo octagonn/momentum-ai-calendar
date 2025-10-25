@@ -27,7 +27,7 @@ export default function AuthCallback() {
           return;
         }
 
-        // If we have tokens in the URL, set the session
+        // If we have tokens in the URL or deep link, set the session
         if (access_token && refresh_token) {
           console.log('Setting session from URL tokens');
           const { data, error: sessionError } = await supabase.auth.setSession({

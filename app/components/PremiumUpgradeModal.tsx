@@ -64,16 +64,16 @@ export default function PremiumUpgradeModal({
   };
   
   const handlePurchase = async () => {
-    if (!selected) {
-      Alert.alert('Error', 'Please select a subscription plan');
-      return;
-    }
-    
+    // Proceed even if no plan is pre-selected; service will fall back to default SKU
     console.log('PremiumUpgradeModal: Starting purchase process...');
     setLoading(true);
     try {
-      console.log('PremiumUpgradeModal: Calling subscriptionService.purchaseSubscription()');
-      const success = await subscriptionService.purchaseSubscription();
+      // Ensure IAP is initialized and listeners are attached before requesting purchase
+      if (user?.id) {
+        await subscriptionService.initialize(user.id);
+      }
+      console.log('PremiumUpgradeModal: Calling subscriptionService.purchaseSubscription() with SKU:', selected);
+      const success = await subscriptionService.purchaseSubscription(selected || undefined);
       console.log('PremiumUpgradeModal: Purchase result:', success);
       
       if (success) {
@@ -86,11 +86,41 @@ export default function PremiumUpgradeModal({
           }}]
         );
       } else {
-        Alert.alert('Purchase Failed', 'The subscription could not be completed. Please try again.');
+        Alert.alert(
+          'Purchase Failed', 
+          'The subscription could not be completed. Please try again.',
+          [{ text: 'OK' }]
+        );
       }
     } catch (error) {
       console.error('PremiumUpgradeModal: Purchase error:', error);
-      Alert.alert('Purchase Error', 'An error occurred during the purchase process. Please try again.');
+      // Provide more specific error messages based on the error type
+      let errorMessage = 'An error occurred during the purchase process. Please try again.';
+      
+      if (error && typeof error === 'object') {
+        if (error.message) {
+          errorMessage = error.message;
+        } else if (error.code) {
+          switch (error.code) {
+            case 'E_USER_CANCELLED':
+              errorMessage = 'Purchase was cancelled.';
+              break;
+            case 'E_ITEM_UNAVAILABLE':
+              errorMessage = 'This subscription is not available. Please try again later.';
+              break;
+            case 'E_NETWORK_ERROR':
+              errorMessage = 'Network error. Please check your connection and try again.';
+              break;
+            case 'E_SERVICE_ERROR':
+              errorMessage = 'Service temporarily unavailable. Please try again later.';
+              break;
+            default:
+              errorMessage = `Purchase failed: ${error.code}`;
+          }
+        }
+      }
+      
+      Alert.alert('Purchase Error', errorMessage, [{ text: 'OK' }]);
     } finally {
       setLoading(false);
     }
@@ -181,8 +211,8 @@ export default function PremiumUpgradeModal({
           <View style={styles.titleSection}>
             <View style={[styles.iconContainer, { backgroundColor: colors.primary }]}>
               <Image
-                source={require('@/assets/icon.png')}
-                style={{ width: 72, height: 72 }}
+                source={require('@/assets/images/premium-icon-2.png')}
+                style={{ width: 96, height: 96 }}
                 resizeMode="contain"
               />
             </View>
@@ -268,7 +298,7 @@ export default function PremiumUpgradeModal({
                 loading && styles.disabledButton
               ]}
               onPress={handlePurchase}
-              disabled={loading || !selected}
+            disabled={loading}
             >
               {loading ? (
                 <ActivityIndicator size="small" color={colors.background} />
@@ -282,7 +312,7 @@ export default function PremiumUpgradeModal({
             <TouchableOpacity
               style={styles.restoreButton}
               onPress={handleRestore}
-              disabled={loading}
+            disabled={loading}
             >
               <Text style={[styles.restoreButtonText, { color: colors.primary }]}>
                 Restore Purchases

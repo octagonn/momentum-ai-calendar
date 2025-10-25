@@ -14,6 +14,7 @@ import {
   Alert,
   ActivityIndicator,
   ImageBackground,
+  Image,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Crown, Shield, FileText, X, Lock, Sun, Moon, Monitor, Sparkles, Calendar } from "lucide-react-native";
@@ -338,6 +339,21 @@ export default function SettingsScreen() {
       fontSize: 16,
       fontWeight: "600" as const,
       color: colors.primary,
+    },
+    premiumIconContainer: {
+      width: 104,
+      height: 104,
+      borderRadius: 52,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: 'rgba(255,255,255,0.15)',
+      borderWidth: 1,
+      borderColor: 'rgba(255,255,255,0.35)',
+      marginBottom: 12,
+    },
+    premiumIcon: {
+      width: 80,
+      height: 80,
     },
     section: {
       backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(255, 255, 255, 0.8)',
@@ -667,7 +683,11 @@ export default function SettingsScreen() {
               end={{ x: 1, y: 1 }}
               style={styles.gradientContent}
             >
-              <Crown size={48} color="white" />
+              <Image
+                source={require('@/assets/images/premium-icon-1.png')}
+                style={{ width: 72, height: 72 }}
+                resizeMode="contain"
+              />
               <Text style={styles.subscriptionTitle}>Premium Member</Text>
               <Text style={styles.subscriptionDescription}>
                 You have access to all premium features
@@ -708,7 +728,14 @@ export default function SettingsScreen() {
               end={{ x: 1, y: 1 }}
               style={styles.gradientContent}
             >
-              <Text style={styles.subscriptionTitle}>Momentum Pro</Text>
+              <View style={styles.premiumIconContainer}>
+                <Image
+                  source={require('@/assets/images/premium-icon-1.png')}
+                  style={styles.premiumIcon}
+                  resizeMode="contain"
+                />
+              </View>
+              <Text style={styles.subscriptionTitle}>Momentum Premium</Text>
               <Text style={styles.subscriptionDescription}>
                 $4.99/month • 7-day free trial for new users
               </Text>

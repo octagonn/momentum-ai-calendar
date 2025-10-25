@@ -124,7 +124,7 @@ class FeatureGateService {
 
   async initialize(userId: string): Promise<void> {
     try {
-      // Get user's subscription tier from database
+      // Get user's subscription tier from database (single source of truth)
       const { data, error } = await supabase
         .from('user_profiles')
         .select('subscription_tier')
@@ -133,12 +133,6 @@ class FeatureGateService {
 
       if (!error && data) {
         this.userTier = data.subscription_tier || 'free';
-      }
-
-      // Also check with RevenueCat for the most up-to-date status
-      const subscriptionInfo = await subscriptionService.getSubscriptionInfo();
-      if (subscriptionInfo.isActive) {
-        this.userTier = subscriptionInfo.tier;
       }
     } catch (error) {
       console.error('Error initializing feature gate:', error);

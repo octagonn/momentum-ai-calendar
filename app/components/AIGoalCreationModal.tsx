@@ -143,8 +143,15 @@ export default function AIGoalCreationModal({ visible, onClose, onGoalCreated }:
         content: userMessage
       });
 
-      // Call AI service to get response
-      const response = await aiService.generateResponse(conversationHistory);
+      // Call AI service to get response with optional onboarding context
+      const response = await aiService.generateResponse(conversationHistory, {
+        age: userProfile?.age ?? null,
+        gender: userProfile?.gender ?? null,
+        heightCm: userProfile?.heightCm ?? null,
+        weightKg: userProfile?.weightKg ?? null,
+        unitSystem: userProfile?.unitSystem ?? null,
+        dateOfBirth: userProfile?.dateOfBirth ?? null,
+      });
       
       if (response.success && response.message) {
         addMessage('assistant', response.message);
@@ -180,8 +187,15 @@ export default function AIGoalCreationModal({ visible, onClose, onGoalCreated }:
       // Ensure user profile exists
       await ensureUserProfile(supabase, user.id);
 
-      // Call the AI service to create the goal plan from the conversation
-      const planResponse = await aiService.createGoalFromConversation(conversationHistory);
+      // Call the AI service to create the goal plan from the conversation with optional onboarding context
+      const planResponse = await aiService.createGoalFromConversation(conversationHistory, {
+        age: userProfile?.age ?? null,
+        gender: userProfile?.gender ?? null,
+        heightCm: userProfile?.heightCm ?? null,
+        weightKg: userProfile?.weightKg ?? null,
+        unitSystem: userProfile?.unitSystem ?? null,
+        dateOfBirth: userProfile?.dateOfBirth ?? null,
+      });
       
       if (planResponse.success && planResponse.goal && planResponse.tasks) {
         // The database function will automatically assign a color if not provided

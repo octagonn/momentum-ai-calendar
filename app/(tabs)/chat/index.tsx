@@ -289,8 +289,15 @@ export default function ChatScreen() {
         content: userMessage
       });
 
-      // Call AI service to get response
-      const response = await aiService.generateResponse(conversationHistory);
+      // Call AI service to get response with optional onboarding context
+      const response = await aiService.generateResponse(conversationHistory, {
+        age: profile?.age ?? null,
+        gender: profile?.gender ?? null,
+        heightCm: profile?.heightCm ?? null,
+        weightKg: profile?.weightKg ?? null,
+        unitSystem: profile?.unitSystem ?? null,
+        dateOfBirth: profile?.dateOfBirth ?? null,
+      });
       
       if (response.success && response.message) {
         addMessage('assistant', response.message);

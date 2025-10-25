@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -10,7 +10,6 @@ import {
   KeyboardAvoidingView,
   Platform,
   Dimensions,
-  Animated,
   Image,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -21,51 +20,31 @@ const { width } = Dimensions.get('window');
 
 interface AuthScreenProps {
   onAuthSuccess: () => void;
+  onSignUpRequest?: () => void;
 }
 
-export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
-  const [isLogin, setIsLogin] = useState(true);
+export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess, onSignUpRequest }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const [agreedToTerms, setAgreedToTerms] = useState(false);
-  const [showTerms, setShowTerms] = useState(false);
-  const [verificationSent, setVerificationSent] = useState(false);
+  const [showVerifyModal, setShowVerifyModal] = useState(false);
+  const [lastResendAt, setLastResendAt] = useState<number | null>(null);
+  const [cooldown, setCooldown] = useState<number>(0);
 
-  const { signUp, signIn, resendVerification } = useAuth();
+  const { signIn, resendVerification } = useAuth();
 
-  const handleSignUp = async () => {
-    if (!agreedToTerms) {
-      Alert.alert('Terms Required', 'Please agree to the Terms of Service to continue.');
-      return;
-    }
-
-    if (password !== confirmPassword) {
-      Alert.alert('Password Mismatch', 'Passwords do not match.');
-      return;
-    }
-
-    if (password.length < 6) {
-      Alert.alert('Password Too Short', 'Password must be at least 6 characters long.');
-      return;
-    }
-
-    setLoading(true);
-    const { error } = await signUp(email, password);
-    setLoading(false);
-
-    if (error) {
-      Alert.alert('Sign Up Error', error.message);
+  useEffect(() => {
+    let timer: any;
+    if (showVerifyModal && lastResendAt) {
+      timer = setInterval(() => {
+        const diffSec = Math.max(0, 180 - Math.floor((Date.now() - lastResendAt) / 1000));
+        setCooldown(diffSec);
+      }, 1000);
     } else {
-      setVerificationSent(true);
-      Alert.alert(
-        'Check Your Email',
-        'We sent you a verification link. Please check your email and click the link to verify your account.',
-        [{ text: 'OK' }]
-      );
+      setCooldown(0);
     }
-  };
+    return () => timer && clearInterval(timer);
+  }, [showVerifyModal, lastResendAt]);
 
   const handleSignIn = async () => {
     setLoading(true);
@@ -73,6 +52,12 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
     setLoading(false);
 
     if (error) {
+      const msg = (error.message || '').toLowerCase();
+      const looksUnconfirmed = msg.includes('confirm') || msg.includes('verify') || msg.includes('confirmed');
+      if (looksUnconfirmed) {
+        setShowVerifyModal(true);
+        return;
+      }
       Alert.alert('Sign In Error', error.message);
     } else {
       onAuthSuccess();
@@ -80,130 +65,22 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
   };
 
   const handleResendVerification = async () => {
-    setLoading(true);
-    const { error } = await resendVerification(email);
-    setLoading(false);
-
-    if (error) {
-      Alert.alert('Error', error.message);
-    } else {
-      Alert.alert('Verification Sent', 'A new verification email has been sent.');
+    if (cooldown > 0) return;
+    try {
+      setLoading(true);
+      const { error } = await resendVerification(email);
+      setLoading(false);
+      if (error) {
+        Alert.alert('Error', error.message);
+        return;
+      }
+      setLastResendAt(Date.now());
+      Alert.alert('Verification Sent', 'We sent you a new verification email.');
+    } catch (e: any) {
+      setLoading(false);
+      Alert.alert('Error', e?.message || 'Failed to resend verification email');
     }
   };
-
-  const renderTermsModal = () => (
-    <View style={styles.modalOverlay}>
-      <View style={styles.modalContent}>
-        <ScrollView style={styles.termsContent}>
-          <Text style={styles.modalTitle}>Terms of Service</Text>
-          <Text style={styles.termsText}>
-            Last updated: {new Date().toLocaleDateString()}
-          </Text>
-          
-          <Text style={styles.termsSectionTitle}>1. Acceptance of Terms</Text>
-          <Text style={styles.termsText}>
-            By accessing and using Momentum, you accept and agree to be bound by the terms and provision of this agreement.
-          </Text>
-
-          <Text style={styles.termsSectionTitle}>2. Use License</Text>
-          <Text style={styles.termsText}>
-            Permission is granted to temporarily download one copy of Momentum per device for personal, non-commercial transitory viewing only.
-          </Text>
-
-          <Text style={styles.termsSectionTitle}>3. Privacy Policy</Text>
-          <Text style={styles.termsText}>
-            Your privacy is important to us. We collect and use your personal information in accordance with our Privacy Policy.
-          </Text>
-
-          <Text style={styles.termsSectionTitle}>4. User Accounts</Text>
-          <Text style={styles.termsText}>
-            You are responsible for maintaining the confidentiality of your account and password. You agree to accept responsibility for all activities that occur under your account.
-          </Text>
-
-          <Text style={styles.termsSectionTitle}>5. Prohibited Uses</Text>
-          <Text style={styles.termsText}>
-            You may not use our service for any unlawful purpose or to solicit others to perform unlawful acts.
-          </Text>
-
-          <Text style={styles.termsSectionTitle}>6. Disclaimer</Text>
-          <Text style={styles.termsText}>
-            The information on this app is provided on an "as is" basis. To the fullest extent permitted by law, this Company excludes all representations, warranties, conditions and terms.
-          </Text>
-
-          <Text style={styles.termsSectionTitle}>7. Contact Information</Text>
-          <Text style={styles.termsText}>
-            If you have any questions about these Terms of Service, please contact us at support@momentum.app
-          </Text>
-        </ScrollView>
-        
-        <View style={styles.modalButtons}>
-          <TouchableOpacity
-            style={[styles.modalButton, styles.cancelButton]}
-            onPress={() => setShowTerms(false)}
-          >
-            <Text style={styles.cancelButtonText}>Close</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.modalButton, styles.acceptButton]}
-            onPress={() => {
-              setAgreedToTerms(true);
-              setShowTerms(false);
-            }}
-          >
-            <Text style={styles.acceptButtonText}>I Accept</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    </View>
-  );
-
-  if (verificationSent) {
-    return (
-      <View style={styles.container}>
-        <LinearGradient
-          colors={['#0f0f23', '#1a0b2e', '#2d1b69', '#8e44ad', '#c44569']}
-          locations={[0, 0.2, 0.4, 0.7, 1]}
-          style={styles.gradient}
-        >
-          <SafeAreaView style={styles.safeArea}>
-            <View style={styles.verificationContainer}>
-            <View style={styles.iconContainer}>
-              <Image
-                source={require('@/assets/images/icon.png')}
-                style={styles.verificationIcon}
-                resizeMode="contain"
-              />
-            </View>
-            <Text style={styles.title}>Check Your Email</Text>
-            <Text style={styles.subtitle}>
-              We've sent a verification link to {email}
-            </Text>
-            <Text style={styles.description}>
-              Please check your email and click the verification link to activate your account.
-            </Text>
-            
-            <TouchableOpacity
-              style={styles.resendButton}
-              onPress={handleResendVerification}
-              disabled={loading}
-            >
-              <Text style={styles.resendButtonText}>
-                {loading ? 'Sending...' : 'Resend Verification Email'}
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.backButton}
-              onPress={() => setVerificationSent(false)}
-            >
-              <Text style={styles.backButtonText}>Back to Sign Up</Text>
-            </TouchableOpacity>
-          </View>
-          </SafeAreaView>
-        </LinearGradient>
-      </View>
-    );
-  }
 
   return (
     <View style={styles.container}>
@@ -246,25 +123,6 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
                 <Text style={styles.cardTitle}>Welcome Back</Text>
                 <Text style={styles.cardSubtitle}>Sign in to continue your journey</Text>
               </View>
-              
-              <View style={styles.tabContainer}>
-                <TouchableOpacity
-                  style={[styles.tab, isLogin && styles.activeTab]}
-                  onPress={() => setIsLogin(true)}
-                >
-                  <Text style={[styles.tabText, isLogin && styles.activeTabText]}>
-                    Sign In
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.tab, !isLogin && styles.activeTab]}
-                  onPress={() => setIsLogin(false)}
-                >
-                  <Text style={[styles.tabText, !isLogin && styles.activeTabText]}>
-                    Sign Up
-                  </Text>
-                </TouchableOpacity>
-              </View>
 
               <View style={styles.formContent}>
                 <View style={styles.inputContainer}>
@@ -294,60 +152,23 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
                 />
               </View>
 
-              {!isLogin && (
-                <View style={styles.inputContainer}>
-                  <Text style={styles.inputLabel}>Confirm Password</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Confirm your password"
-                    placeholderTextColor="#888"
-                    value={confirmPassword}
-                    onChangeText={setConfirmPassword}
-                    secureTextEntry
-                    autoCapitalize="none"
-                  />
-                </View>
-              )}
-
-              {!isLogin && (
-                <View style={styles.termsContainer}>
-                  <TouchableOpacity
-                    style={styles.checkboxContainer}
-                    onPress={() => setAgreedToTerms(!agreedToTerms)}
-                  >
-                    <View style={[styles.checkbox, agreedToTerms && styles.checkedBox]}>
-                      {agreedToTerms && <Text style={styles.checkmark}>✓</Text>}
-                    </View>
-                    <Text style={styles.termsText}>
-                      I agree to the{' '}
-                      <Text
-                        style={styles.termsLink}
-                        onPress={() => setShowTerms(true)}
-                      >
-                        Terms of Service
-                      </Text>
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              )}
-
               <TouchableOpacity
                 style={[styles.submitButton, loading && styles.disabledButton]}
-                onPress={isLogin ? handleSignIn : handleSignUp}
+                onPress={handleSignIn}
                 disabled={loading}
               >
                 <Text style={styles.submitButtonText}>
-                  {loading ? 'Please wait...' : (isLogin ? 'Sign In' : 'Create Account')}
+                  {loading ? 'Please wait...' : 'Sign In'}
                 </Text>
               </TouchableOpacity>
 
                 <Text style={styles.footerText}>
-                  {isLogin ? "Don't have an account? " : "Already have an account? "}
+                  {"Don't have an account? "}
                   <Text
                     style={styles.linkText}
-                    onPress={() => setIsLogin(!isLogin)}
+                    onPress={() => onSignUpRequest && onSignUpRequest()}
                   >
-                    {isLogin ? 'Sign Up' : 'Sign In'}
+                    Sign Up
                   </Text>
                 </Text>
               </View>
@@ -356,8 +177,36 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
           </KeyboardAvoidingView>
         </SafeAreaView>
       </LinearGradient>
-
-      {showTerms && renderTermsModal()}
+      {showVerifyModal && (
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={{ paddingHorizontal: 20, paddingTop: 20, paddingBottom: 8 }}>
+              <Text style={styles.modalTitle}>Email Not Verified</Text>
+              <Text style={{ color: '#555', textAlign: 'center', fontSize: 15, lineHeight: 22, paddingHorizontal: 8 }}>
+                Your account for {email || 'this email'} isn’t verified yet. Please check your inbox for the verification link.
+              </Text>
+            </View>
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.cancelButton]}
+                onPress={() => setShowVerifyModal(false)}
+                disabled={loading}
+              >
+                <Text style={styles.cancelButtonText}>Close</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.acceptButton, cooldown > 0 ? { opacity: 0.6 } : null]}
+                onPress={handleResendVerification}
+                disabled={loading || cooldown > 0}
+              >
+                <Text style={styles.acceptButtonText}>
+                  {cooldown > 0 ? `Resend in ${Math.floor(cooldown / 60)}:${String(cooldown % 60).padStart(2,'0')}` : 'Resend Verification Email'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      )}
     </View>
   );
 };
@@ -509,39 +358,6 @@ const styles = StyleSheet.create({
   formContent: {
     paddingHorizontal: 24,
     paddingBottom: 24,
-  },
-  tabContainer: {
-    flexDirection: 'row',
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    borderRadius: 20,
-    marginHorizontal: 24,
-    marginBottom: 24,
-    padding: 6,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-  },
-  tab: {
-    flex: 1,
-    paddingVertical: 14,
-    alignItems: 'center',
-    borderRadius: 16,
-  },
-  activeTab: {
-    backgroundColor: 'rgba(142, 68, 173, 0.8)',
-    shadowColor: '#8e44ad',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  tabText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: 'rgba(255, 255, 255, 0.6)',
-  },
-  activeTabText: {
-    color: '#fff',
-    fontWeight: '700',
   },
   inputContainer: {
     marginBottom: 20,
@@ -709,7 +525,7 @@ const styles = StyleSheet.create({
     zIndex: 1000,
   },
   modalContent: {
-    backgroundColor: '#fff',
+    backgroundColor: '#1a0b2e',
     borderRadius: 20,
     margin: 20,
     maxHeight: '80%',
@@ -718,7 +534,7 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#333',
+    color: '#fff',
     textAlign: 'center',
     marginBottom: 16,
     paddingHorizontal: 20,
@@ -740,7 +556,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 16,
     borderTopWidth: 1,
-    borderTopColor: '#eee',
+    borderTopColor: 'rgba(255,255,255,0.12)',
   },
   modalButton: {
     flex: 1,
@@ -750,13 +566,13 @@ const styles = StyleSheet.create({
     marginHorizontal: 8,
   },
   cancelButton: {
-    backgroundColor: '#f0f0f0',
+    backgroundColor: 'rgba(255,255,255,0.08)',
   },
   acceptButton: {
     backgroundColor: '#667eea',
   },
   cancelButtonText: {
-    color: '#666',
+    color: '#eee',
     fontSize: 16,
     fontWeight: '600',
   },

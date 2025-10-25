@@ -11,6 +11,7 @@ import {
   Linking,
 } from 'react-native';
 import { X, Crown, CreditCard, Settings, ExternalLink, AlertCircle, Sparkles, Target, Zap, Lock, Check } from 'lucide-react-native';
+import { Image } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../providers/ThemeProvider';
 import { useAuth } from '../../providers/AuthProvider';
@@ -30,7 +31,7 @@ export default function SubscriptionManagementModal({
   const { colors, isDark } = useTheme();
   const { user } = useAuth();
   const { user: userProfile } = useUser();
-  const { isPremium, isTrialing } = useSubscription();
+  const { isPremium } = useSubscription();
   const insets = useSafeAreaInsets();
   
   const [loading, setLoading] = useState(false);
@@ -50,9 +51,10 @@ export default function SubscriptionManagementModal({
     } catch (error) {
       console.error('Error loading subscription info:', error);
       // Use actual subscription status from provider
+      const trialing = userProfile?.trialEndsAt ? (new Date(userProfile.trialEndsAt) > new Date()) : false;
       setSubscriptionInfo({
         tier: isPremium ? 'premium' : 'free',
-        status: isTrialing ? 'trialing' : (isPremium ? 'active' : 'inactive'),
+        status: trialing ? 'trialing' : (isPremium ? 'active' : 'inactive'),
         renewalDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days from now
         trialEndsAt: userProfile?.trialEndsAt ? new Date(userProfile.trialEndsAt) : null,
         price: '$4.99',
@@ -132,7 +134,11 @@ export default function SubscriptionManagementModal({
         }]}>
           <View style={styles.headerContent}>
             <View style={[styles.iconContainer, { backgroundColor: colors.primary }]}>
-              <Crown size={24} color={colors.background} />
+              <Image
+                source={require('@/assets/images/premium-icon-2.png')}
+                style={{ width: 28, height: 28 }}
+                resizeMode="contain"
+              />
             </View>
             <Text style={[styles.headerTitle, { color: colors.text }]}>
               My Subscription

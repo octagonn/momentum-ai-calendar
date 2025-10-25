@@ -28,7 +28,9 @@
       "config": {
         "usesNonExemptEncryption": false
       },
-      "associatedDomains": ["applinks:rork.com"]
+      "associatedDomains": [
+        "applinks:rork.com"
+      ]
     },
     "android": {
       "adaptiveIcon": {
@@ -50,7 +52,10 @@
               "pathPrefix": "/auth/callback"
             }
           ],
-          "category": ["BROWSABLE", "DEFAULT"]
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
         }
       ]
     },
@@ -72,7 +77,8 @@
           "defaultChannel": "default"
         }
       ],
-      "react-native-iap"
+      "react-native-iap",
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true

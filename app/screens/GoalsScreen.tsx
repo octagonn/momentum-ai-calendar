@@ -97,6 +97,35 @@ export default function GoalsScreen() {
 
       if (error) {
         console.error('Error fetching goals:', error);
+        if ((error as any)?.code === '42501' || (error as any)?.message?.includes('JWT') || (error as any)?.message?.includes('permission denied') || (error as any)?.message?.includes('Unauthorized')) {
+          try {
+            await supabase.auth.refreshSession();
+            let retry = await supabase
+              .from('goal_progress')
+              .select('*')
+              .eq('user_id', user.id)
+              .eq('status', 'active')
+              .order('created_at', { ascending: false });
+            if (retry.error) {
+              // Fallback to goals table
+              const fb = await supabase
+                .from('goals')
+                .select('*')
+                .eq('user_id', user.id)
+                .eq('status', 'active')
+                .order('created_at', { ascending: false });
+              retry = fb as any;
+            }
+            if (retry.error) {
+              console.error('Retry error fetching goals:', retry.error);
+              return;
+            }
+            setGoals(retry.data || []);
+            return;
+          } catch (e) {
+            console.warn('Goal fetch retry after refresh failed:', e);
+          }
+        }
         return;
       }
 
@@ -166,8 +195,8 @@ export default function GoalsScreen() {
       .subscribe();
 
     return () => {
-      goalsSubscription.unsubscribe();
-      tasksSubscription.unsubscribe();
+      try { goalsSubscription.unsubscribe(); } catch {}
+      try { tasksSubscription.unsubscribe(); } catch {}
     };
   }, [user, fetchGoals]);
 
@@ -181,11 +210,18 @@ export default function GoalsScreen() {
     setShowGoalModal(true);
   };
 
-  const handleGoalCreated = (newGoal: any) => {
+  const handleGoalCreated = async (newGoal: any) => {
     console.log('Goal created:', newGoal);
-    // Refresh the goals list
+    // Refresh local list immediately
     fetchGoals();
-    // The GoalsProvider will automatically update via real-time listener
+    // Also refresh provider caches so Home and modals update live
+    try {
+      await refreshTasks();
+      const { refreshGoals } = useGoals();
+      await refreshGoals();
+    } catch (e) {
+      console.log('Post-create refresh warning:', e);
+    }
   };
 
   const handleCreateGoalPress = () => {
