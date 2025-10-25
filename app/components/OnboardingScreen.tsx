@@ -530,7 +530,7 @@ export default function OnboardingScreen({ onComplete }: OnboardingScreenProps) 
         activeOpacity={0.8}
         style={[styles.dobRow, { borderColor: colors.border, backgroundColor: colors.surface }]}
       >
-        <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>Date of birth</Text>
+        <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>Date of birth (required)</Text>
         <Text style={{ color: colors.text, fontSize: 16, fontWeight: '600' }}>
           {dob ? dob.toLocaleDateString() : 'Select'}
         </Text>
@@ -552,6 +552,7 @@ export default function OnboardingScreen({ onComplete }: OnboardingScreenProps) 
 
       {/* Gender chips */}
       <View style={[styles.chipsContainer, { justifyContent: 'center' }]}> 
+        <Text style={[styles.inputLabel, { width: '100%', textAlign: 'center', color: colors.textSecondary }]}>Gender (optional)</Text>
         {['Female','Male','Non-binary','Prefer not to say'].map((g) => {
           const selected = gender === g;
           return (
@@ -567,10 +568,10 @@ export default function OnboardingScreen({ onComplete }: OnboardingScreenProps) 
         })}
       </View>
 
-      <Text style={[styles.privacyNote, { color: colors.textSecondary }]}>Optional. Used only to personalize your plan. Your data is private, anonymous, and will never be sold.</Text>
+      <Text style={[styles.privacyNote, { color: colors.textSecondary }]}>We require your date of birth to verify you are at least 13 years old. Gender is optional and used only to personalize your plan. Your data is private, anonymous, and never sold.</Text>
 
       <TouchableOpacity onPress={() => setGender('')} activeOpacity={0.7}>
-        <Text style={[styles.skipLink, { color: colors.primary }]}>Skip for now</Text>
+        <Text style={[styles.skipLink, { color: colors.primary }]}>Skip gender for now</Text>
       </TouchableOpacity>
     </View>
   );
