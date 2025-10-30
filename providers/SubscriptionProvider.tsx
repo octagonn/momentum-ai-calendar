@@ -72,6 +72,21 @@ export const SubscriptionProvider: React.FC<SubscriptionProviderProps> = ({ chil
   // simulated purchases and manual testing can enable Premium reliably in Expo Go.
   // Use resetPremiumStatus() to clear the mock flag when needed.
   
+  // Define before any effects that reference it to avoid TDZ on web
+  const checkSubscriptionStatus = useCallback(async () => {
+    if (!authUser) return;
+    
+    try {
+      // Sync subscription status with RevenueCat
+      await subscriptionService.syncSubscriptionStatus();
+      
+      // Refresh user profile to get updated subscription info
+      await refreshUser();
+    } catch (error) {
+      console.error('Error checking subscription status:', error);
+    }
+  }, [authUser, refreshUser]);
+  
   useEffect(() => {
     if (authUser) {
       initializeSubscription();
@@ -143,20 +158,6 @@ export const SubscriptionProvider: React.FC<SubscriptionProviderProps> = ({ chil
       setIsLoading(false);
     }
   };
-  
-  const checkSubscriptionStatus = useCallback(async () => {
-    if (!authUser) return;
-    
-    try {
-      // Sync subscription status with RevenueCat
-      await subscriptionService.syncSubscriptionStatus();
-      
-      // Refresh user profile to get updated subscription info
-      await refreshUser();
-    } catch (error) {
-      console.error('Error checking subscription status:', error);
-    }
-  }, [authUser, refreshUser]);
   
   const showUpgradeModal = useCallback((
     trigger: 'goal_limit' | 'ai_goal' | 'color_picker' | 'analytics' | 'general' = 'general'

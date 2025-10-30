@@ -10,6 +10,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Dimensions,
+  Modal,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { ArrowRight, Check } from 'lucide-react-native';
@@ -51,6 +52,8 @@ export default function OnboardingScreen({ onComplete }: OnboardingScreenProps) 
   const [confirmPassword, setConfirmPassword] = useState('');
   const [lastResendAt, setLastResendAt] = useState<number | null>(null);
   const [cooldown, setCooldown] = useState<number>(0);
+  const [acceptedTerms, setAcceptedTerms] = useState<boolean>(false);
+  const [termsModalVisible, setTermsModalVisible] = useState<boolean>(false);
 
   const MIN_AGE_YEARS = 13;
 
@@ -145,6 +148,10 @@ export default function OnboardingScreen({ onComplete }: OnboardingScreenProps) 
   };
 
   const handleNext = async () => {
+    if (currentStep === 0 && !acceptedTerms) {
+      Alert.alert('Agreement Required', 'Please agree to the Terms & Conditions to continue.');
+      return;
+    }
     if (currentStep === 1) {
       // Name step
       if (!fullName.trim()) {
@@ -433,6 +440,17 @@ export default function OnboardingScreen({ onComplete }: OnboardingScreenProps) 
       <TouchableOpacity onPress={onComplete} activeOpacity={0.8} style={{ marginTop: 8 }}>
         <Text style={[styles.helpText, { color: colors.primary }]}>Already have an account?</Text>
       </TouchableOpacity>
+
+      <View style={styles.termsRow}>
+        <TouchableOpacity
+          onPress={() => setAcceptedTerms(!acceptedTerms)}
+          activeOpacity={0.8}
+          style={[styles.checkBox, { borderColor: colors.border, backgroundColor: acceptedTerms ? colors.primary : 'transparent' }]}
+        >
+          {acceptedTerms && <Check size={16} color={'white'} />}
+        </TouchableOpacity>
+        <Text style={[styles.termsText, { color: colors.textSecondary }]}>I agree to the <Text onPress={() => setTermsModalVisible(true)} style={[styles.termsLink, { color: colors.primary }]}>Terms & Conditions</Text></Text>
+      </View>
     </View>
   );
 
@@ -871,12 +889,12 @@ export default function OnboardingScreen({ onComplete }: OnboardingScreenProps) 
                   styles.nextButton,
                   { 
                     backgroundColor: colors.primary,
-                    opacity: isLoading ? 0.7 : 1 
+                  opacity: (isLoading || (currentStep === 0 && !acceptedTerms)) ? 0.7 : 1 
                   },
                   { flex: 1, minWidth: 0 }
                 ]}
-                onPress={handleNext}
-                disabled={isLoading}
+              onPress={handleNext}
+              disabled={isLoading || (currentStep === 0 && !acceptedTerms)}
               >
                 <Text style={styles.nextButtonText}>
                   {currentStep === steps.length - 1 ? 'Continue' : 'Continue'}
@@ -887,6 +905,41 @@ export default function OnboardingScreen({ onComplete }: OnboardingScreenProps) 
           </View>
         </ScrollView>
       </LinearGradient>
+    {/* Terms & Conditions Modal */}
+    <Modal
+      visible={termsModalVisible}
+      animationType="slide"
+      transparent={true}
+      onRequestClose={() => setTermsModalVisible(false)}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={[styles.modalContainer, { backgroundColor: colors.background }]}> 
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Terms & Conditions</Text>
+            <TouchableOpacity
+              style={styles.closeButton}
+              onPress={() => setTermsModalVisible(false)}
+              activeOpacity={0.7}
+            >
+              <Text style={{ fontSize: 18, color: colors.text }}>×</Text>
+            </TouchableOpacity>
+          </View>
+          <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={false}>
+            <Text style={[styles.helpText, { color: colors.textSecondary, textAlign: 'left', marginTop: 0 }]}>Last updated: October 25, 2025</Text>
+            <Text style={[styles.stepSubtitle, { color: colors.primary, textAlign: 'left', marginTop: 16 }]}>⚠️ IMPORTANT NOTICE - USE AT YOUR OWN RISK</Text>
+            <Text style={[styles.description, { color: colors.text, textAlign: 'left' }]}>By using Momentum: AI Calendar, you acknowledge and agree that you use the Services at your own risk. AI-generated content may be inaccurate, and you must verify all outputs independently. No warranties are provided.</Text>
+            <Text style={[styles.stepSubtitle, { color: colors.primary, textAlign: 'left', marginTop: 16 }]}>Agreement to Our Legal Terms</Text>
+            <Text style={[styles.description, { color: colors.text, textAlign: 'left' }]}>By creating an account or continuing to use the app, you agree to these Terms & Conditions. For the full policy text, including arbitration, limitations of liability, and privacy practices, see Terms & Conditions in Settings.</Text>
+            <Text style={[styles.stepSubtitle, { color: colors.primary, textAlign: 'left', marginTop: 16 }]}>Key Points</Text>
+            <Text style={[styles.description, { color: colors.text, textAlign: 'left' }]}>• You use the Services entirely at your own risk.
+• AI content may be inaccurate; you must verify.
+• We are not liable for missed appointments or reliance on AI outputs.
+• Subscriptions renew automatically unless canceled in App Store settings.</Text>
+            <Text style={[styles.description, { color: colors.text, textAlign: 'left', marginTop: 12 }]}>Contact: app.momentum.mobile@gmail.com</Text>
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
     </KeyboardAvoidingView>
   );
 }
@@ -959,6 +1012,10 @@ const styles = StyleSheet.create({
     borderRadius: 130,
     opacity: 0.25,
     filter: 'blur(40px)'
+  },
+  illustration: {
+    width: 140,
+    height: 140,
   },
   stepTitle: {
     fontSize: 32,
@@ -1115,6 +1172,29 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 20,
   },
+  termsRow: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+    marginTop: 20,
+  },
+  checkBox: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  termsText: {
+    fontSize: 14,
+  },
+  termsLink: {
+    textDecorationLine: 'underline',
+    fontWeight: '600',
+  },
   navigationContainer: {
     paddingTop: 32,
   },
@@ -1188,5 +1268,41 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
     letterSpacing: 0.5,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContainer: {
+    borderRadius: 24,
+    margin: 20,
+    maxHeight: '80%',
+    width: '90%',
+    shadowColor: 'rgba(0, 0, 0, 0.3)',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+  },
+  closeButton: {
+    padding: 4,
+    borderRadius: 12,
+  },
+  modalContent: {
+    padding: 20,
   },
 });

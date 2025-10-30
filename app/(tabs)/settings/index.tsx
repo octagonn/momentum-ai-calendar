@@ -547,13 +547,15 @@ export default function SettingsScreen() {
     },
     themeOptions: {
       flexDirection: 'row',
+      flexWrap: 'wrap',
       gap: 8,
       marginTop: 12,
     },
     themeOption: {
-      flex: 1,
-      paddingVertical: 10,
-      paddingHorizontal: 12,
+      width: '48%',
+      paddingVertical: 14,
+      paddingHorizontal: 16,
+      minHeight: 44,
       borderRadius: 12,
       borderWidth: 2,
       borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)',
@@ -567,7 +569,7 @@ export default function SettingsScreen() {
     themeOptionContent: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 8,
+      gap: 12,
     },
     themeOptionText: {
       fontSize: 14,
@@ -1261,43 +1263,85 @@ export default function SettingsScreen() {
               </TouchableOpacity>
             </View>
             <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={false}>
-              <Text style={styles.modalLastUpdated}>Last updated: October 22, 2025</Text>
+              <Text style={styles.modalLastUpdated}>Last updated: October 25, 2025</Text>
 
-              <Text style={[styles.modalSectionTitle, styles.modalFirstSectionTitle]}>Overview</Text>
+              <Text style={[styles.modalSectionTitle, styles.modalFirstSectionTitle]}>PRIVACY POLICY</Text>
               <Text style={styles.modalParagraph}>
-                We collect only what we need to operate Momentum and improve your experience. We do not sell your personal data.
+                USE AT YOUR OWN RISK: By using Momentum: AI Calendar, you acknowledge that you use the Services at your own risk. While we implement security measures to protect your information, we cannot guarantee absolute security. You are responsible for maintaining the confidentiality of your account credentials and for all activities under your account.
+              </Text>
+              <Text style={styles.modalParagraph}>
+                This Privacy Notice for Momentum: AI Calendar ("we", "us", or "our") describes how and why we might access, collect, store, use, and/or share ("process") your personal information when you use our Services, including when you use our mobile application.
+              </Text>
+              <Text style={styles.modalParagraph}>
+                Questions or concerns? Reading this Privacy Notice will help you understand your privacy rights and choices. If you do not agree with our policies and practices, please do not use our Services. If you still have questions or concerns, contact us at app.momentum.mobile@gmail.com.
               </Text>
 
-              <Text style={styles.modalSectionTitle}>Information We Collect</Text>
-              <Text style={styles.modalParagraph}>We process:</Text>
-              <Text style={styles.modalBulletPoint}>• Account data: name, email, authentication identifiers</Text>
-              <Text style={styles.modalBulletPoint}>• App content: goals, tasks, settings</Text>
-              <Text style={styles.modalBulletPoint}>• Diagnostics: crash reports, performance metrics</Text>
-              <Text style={styles.modalBulletPoint}>• Device info: model, OS version, timezone</Text>
+              <Text style={styles.modalSectionTitle}>SUMMARY OF KEY POINTS</Text>
+              <Text style={styles.modalBulletPoint}>• What personal information do we process? It depends on how you use the Services.</Text>
+              <Text style={styles.modalBulletPoint}>• Do we process any sensitive information? Only with your consent or as permitted by law.</Text>
+              <Text style={styles.modalBulletPoint}>• Do we collect information from third parties? We do not collect from third parties.</Text>
+              <Text style={styles.modalBulletPoint}>• How do we process your information? To provide, improve, secure, and comply with law.</Text>
+              <Text style={styles.modalBulletPoint}>• With whom do we share? Service providers and in business transfers, as needed.</Text>
+              <Text style={styles.modalBulletPoint}>• How do we keep information safe? Organizational/technical safeguards (no method is 100% secure).</Text>
+              <Text style={styles.modalBulletPoint}>• Your rights: You may have rights to access, correct, delete, restrict, object, and portability.</Text>
 
-              <Text style={styles.modalSectionTitle}>How We Use Your Information</Text>
-              <Text style={styles.modalParagraph}>We use data to provide the app, sync across devices, send reminders you request, secure accounts, and improve features.</Text>
+              <Text style={styles.modalSectionTitle}>TABLE OF CONTENTS</Text>
+              <Text style={styles.modalBulletPoint}>1. WHAT INFORMATION DO WE COLLECT?</Text>
+              <Text style={styles.modalBulletPoint}>2. HOW DO WE PROCESS YOUR INFORMATION?</Text>
+              <Text style={styles.modalBulletPoint}>3. WHAT LEGAL BASES DO WE RELY ON?</Text>
+              <Text style={styles.modalBulletPoint}>4. WHEN AND WITH WHOM DO WE SHARE?</Text>
+              <Text style={styles.modalBulletPoint}>5. DO WE OFFER AI-BASED PRODUCTS?</Text>
+              <Text style={styles.modalBulletPoint}>6. HOW LONG DO WE KEEP YOUR INFORMATION?</Text>
+              <Text style={styles.modalBulletPoint}>7. HOW DO WE KEEP YOUR INFORMATION SAFE?</Text>
+              <Text style={styles.modalBulletPoint}>8. WHAT ARE YOUR PRIVACY RIGHTS?</Text>
+              <Text style={styles.modalBulletPoint}>9. CONTROLS FOR DO-NOT-TRACK FEATURES</Text>
+              <Text style={styles.modalBulletPoint}>10. US RESIDENTS: SPECIFIC PRIVACY RIGHTS</Text>
+              <Text style={styles.modalBulletPoint}>11. DO WE MAKE UPDATES TO THIS NOTICE?</Text>
+              <Text style={styles.modalBulletPoint}>12. HOW TO CONTACT US</Text>
+              <Text style={styles.modalBulletPoint}>13. HOW TO REVIEW/UPDATE/DELETE DATA</Text>
 
-              <Text style={styles.modalSectionTitle}>Sharing</Text>
-              <Text style={styles.modalParagraph}>We do not sell data. We share with service providers (e.g., Supabase, Apple/Google IAP, analytics) strictly to operate the service, under contract, and only what is necessary.</Text>
+              <Text style={styles.modalSectionTitle}>1. WHAT INFORMATION DO WE COLLECT?</Text>
+              <Text style={styles.modalParagraph}>Personal information you provide, including: names, email addresses, usernames, passwords, calendar data/events, tasks/reminders, time zone and location preferences, and device information. Sensitive information (e.g., biometric) only with consent or as permitted. Google API use adheres to the Google API Services User Data Policy (Limited Use).</Text>
 
-              <Text style={styles.modalSectionTitle}>Security</Text>
-              <Text style={styles.modalParagraph}>We use industry-standard protections in transit and at rest. No method is 100% secure; you use the app at your own risk.</Text>
+              <Text style={styles.modalSectionTitle}>2. HOW DO WE PROCESS YOUR INFORMATION?</Text>
+              <Text style={styles.modalParagraph}>We process information to provide, improve, and administer our Services, communicate with you, ensure security/fraud prevention, and comply with law. Examples: account creation/authentication, service delivery, vital interests.</Text>
 
-              <Text style={styles.modalSectionTitle}>Your Rights</Text>
-              <Text style={styles.modalParagraph}>Subject to local law, you may access, correct, export, and delete your data. Contact us to exercise these rights.</Text>
+              <Text style={styles.modalSectionTitle}>3. WHAT LEGAL BASES DO WE RELY ON?</Text>
+              <Text style={styles.modalParagraph}>We rely on consent, performance of a contract, legal obligations, vital interests, or legitimate interests (depending on your region, e.g., EU/UK/Canada).</Text>
 
-              <Text style={styles.modalSectionTitle}>Retention</Text>
-              <Text style={styles.modalParagraph}>We keep data while your account is active. When you delete your account, we aim to remove personal data within 30 days, unless retention is required by law, security, or dispute resolution.</Text>
+              <Text style={styles.modalSectionTitle}>4. WHEN AND WITH WHOM DO WE SHARE?</Text>
+              <Text style={styles.modalParagraph}>With service providers under contract and in business transfers (e.g., mergers/acquisitions). We do not sell personal information.</Text>
 
-              <Text style={styles.modalSectionTitle}>International Transfers</Text>
-              <Text style={styles.modalParagraph}>Your data may be processed outside your country. We use safeguards where required by law.</Text>
+              <Text style={styles.modalSectionTitle}>5. DO WE OFFER AI-BASED PRODUCTS?</Text>
+              <Text style={styles.modalParagraph}>We offer AI features for analysis/scheduling. AI-generated content may be inaccurate and must be verified by you. Third-party AI providers process data under their terms.</Text>
 
-              <Text style={styles.modalSectionTitle}>Changes to This Policy</Text>
-              <Text style={styles.modalParagraph}>We may update this policy. Continued use means you accept the updated terms.</Text>
+              <Text style={styles.modalSectionTitle}>6. HOW LONG DO WE KEEP YOUR INFORMATION?</Text>
+              <Text style={styles.modalParagraph}>As long as necessary for the purposes in this Notice (e.g., while your account is active) or as required/permitted by law, after which we delete/anonymize where feasible.</Text>
 
-              <Text style={styles.modalSectionTitle}>Contact Us</Text>
-              <Text style={styles.modalParagraph}>privacy@momentum-app.com</Text>
+              <Text style={styles.modalSectionTitle}>7. HOW DO WE KEEP YOUR INFORMATION SAFE?</Text>
+              <Text style={styles.modalParagraph}>We implement appropriate technical/organizational measures. No method is 100% secure. Transmission is at your own risk; safeguard your credentials.</Text>
+
+              <Text style={styles.modalSectionTitle}>8. WHAT ARE YOUR PRIVACY RIGHTS?</Text>
+              <Text style={styles.modalParagraph}>Depending on your location, you may have rights to access, correct, delete, restrict, object, and portability. You can withdraw consent at any time (will not affect prior processing).</Text>
+
+              <Text style={styles.modalSectionTitle}>9. CONTROLS FOR DO-NOT-TRACK FEATURES</Text>
+              <Text style={styles.modalParagraph}>We do not currently respond to DNT signals due to lack of a uniform standard. If one is adopted, we will update this Notice.</Text>
+
+              <Text style={styles.modalSectionTitle}>10. US RESIDENTS: SPECIFIC PRIVACY RIGHTS</Text>
+              <Text style={styles.modalParagraph}>Some US states grant additional rights. Categories processed (last 12 months) may include identifiers, account records, commercial information, internet activity, geolocation (limited), inferences, and sensitive data (limited/optional).</Text>
+
+              <Text style={styles.modalSectionTitle}>11. DO WE MAKE UPDATES TO THIS NOTICE?</Text>
+              <Text style={styles.modalParagraph}>Yes. We update as necessary to stay compliant with relevant laws. Updated versions will reflect a revised date; material changes may be communicated.</Text>
+
+              <Text style={styles.modalSectionTitle}>12. HOW TO CONTACT US</Text>
+              <Text style={styles.modalParagraph}>Email: app.momentum.mobile@gmail.com</Text>
+              <Text style={styles.modalParagraph}>Momentum: AI Calendar</Text>
+              <Text style={styles.modalParagraph}>Ladera Ranch</Text>
+              <Text style={styles.modalParagraph}>Ladera Ranch, CA 92694</Text>
+              <Text style={styles.modalParagraph}>United States</Text>
+
+              <Text style={styles.modalSectionTitle}>13. HOW TO REVIEW, UPDATE, OR DELETE YOUR DATA</Text>
+              <Text style={styles.modalParagraph}>You may request access, correction, deletion, or portability of your data. Send a data subject access request (DSAR) to app.momentum.mobile@gmail.com.</Text>
             </ScrollView>
           </View>
         </View>
@@ -1323,43 +1367,126 @@ export default function SettingsScreen() {
               </TouchableOpacity>
             </View>
             <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={false}>
-              <Text style={styles.modalLastUpdated}>Last updated: October 22, 2025</Text>
+              <Text style={styles.modalLastUpdated}>Last updated: October 25, 2025</Text>
 
-              <Text style={[styles.modalSectionTitle, styles.modalFirstSectionTitle]}>Agreement</Text>
-              <Text style={styles.modalParagraph}>By using Momentum, you agree to these Terms. If you do not agree, do not use the app.</Text>
+              <Text style={[styles.modalSectionTitle, styles.modalFirstSectionTitle]}>⚠️ IMPORTANT NOTICE - USE AT YOUR OWN RISK</Text>
+              <Text style={styles.modalParagraph}>BY USING MOMENTUM: AI CALENDAR, YOU ACKNOWLEDGE AND AGREE THAT:</Text>
+              <Text style={styles.modalBulletPoint}>1) You use the Services entirely at your own risk</Text>
+              <Text style={styles.modalBulletPoint}>2) AI-generated content may be inaccurate, incomplete, or unreliable</Text>
+              <Text style={styles.modalBulletPoint}>3) You are solely responsible for verifying all calendar entries, appointments, reminders, and suggestions</Text>
+              <Text style={styles.modalBulletPoint}>4) We are not liable for missed appointments, scheduling errors, or consequences arising from your use</Text>
+              <Text style={styles.modalBulletPoint}>5) No warranties are provided — the Services are provided "AS IS" and "AS AVAILABLE"</Text>
+              <Text style={styles.modalBulletPoint}>6) Our liability is limited to the maximum extent permitted by law</Text>
 
-              <Text style={styles.modalSectionTitle}>Service</Text>
-              <Text style={styles.modalParagraph}>Momentum is provided “as is” and “as available.” Features may change or be discontinued.</Text>
+              <Text style={styles.modalSectionTitle}>AGREEMENT TO OUR LEGAL TERMS</Text>
+              <Text style={styles.modalParagraph}>We are Momentum: AI Calendar ("Company," "we," "us," "our") located in Ladera Ranch, CA 92694, United States. We operate the Momentum: AI Calendar mobile application and related services ("Services"). By accessing the Services, you agree to these Legal Terms. IF YOU DO NOT AGREE, DO NOT USE THE SERVICES.</Text>
+              <Text style={styles.modalParagraph}>These terms may change; we will update the “Last updated” date. Continued use means you accept changes. The Services are for users at least 13 years of age; minors must have parental permission and supervision.</Text>
 
-              <Text style={styles.modalSectionTitle}>Accounts</Text>
-              <Text style={styles.modalParagraph}>You are responsible for your account, content, and device. You must be legally permitted to use the app.</Text>
+              <Text style={styles.modalSectionTitle}>TABLE OF CONTENTS</Text>
+              <Text style={styles.modalBulletPoint}>1. OUR SERVICES</Text>
+              <Text style={styles.modalBulletPoint}>2. INTELLECTUAL PROPERTY RIGHTS</Text>
+              <Text style={styles.modalBulletPoint}>3. USER REPRESENTATIONS</Text>
+              <Text style={styles.modalBulletPoint}>4. USER REGISTRATION</Text>
+              <Text style={styles.modalBulletPoint}>5. PURCHASES AND PAYMENT</Text>
+              <Text style={styles.modalBulletPoint}>6. SUBSCRIPTIONS</Text>
+              <Text style={styles.modalBulletPoint}>7. PROHIBITED ACTIVITIES</Text>
+              <Text style={styles.modalBulletPoint}>8. AI SERVICES AND LIMITATIONS</Text>
+              <Text style={styles.modalBulletPoint}>9. USER GENERATED CONTRIBUTIONS</Text>
+              <Text style={styles.modalBulletPoint}>10. CONTRIBUTION LICENSE</Text>
+              <Text style={styles.modalBulletPoint}>11. GUIDELINES FOR REVIEWS</Text>
+              <Text style={styles.modalBulletPoint}>12. MOBILE APPLICATION LICENSE</Text>
+              <Text style={styles.modalBulletPoint}>13. SERVICES MANAGEMENT</Text>
+              <Text style={styles.modalBulletPoint}>14. PRIVACY POLICY</Text>
+              <Text style={styles.modalBulletPoint}>15. TERM AND TERMINATION</Text>
+              <Text style={styles.modalBulletPoint}>16. MODIFICATIONS AND INTERRUPTIONS</Text>
+              <Text style={styles.modalBulletPoint}>17. GOVERNING LAW</Text>
+              <Text style={styles.modalBulletPoint}>18. DISPUTE RESOLUTION</Text>
+              <Text style={styles.modalBulletPoint}>19. CORRECTIONS</Text>
+              <Text style={styles.modalBulletPoint}>20. DISCLAIMER</Text>
+              <Text style={styles.modalBulletPoint}>21. LIMITATIONS OF LIABILITY</Text>
+              <Text style={styles.modalBulletPoint}>22. INDEMNIFICATION</Text>
+              <Text style={styles.modalBulletPoint}>23. USER DATA</Text>
+              <Text style={styles.modalBulletPoint}>24. ELECTRONIC COMMUNICATIONS, TRANSACTIONS, AND SIGNATURES</Text>
+              <Text style={styles.modalBulletPoint}>25. CALIFORNIA USERS AND RESIDENTS</Text>
+              <Text style={styles.modalBulletPoint}>26. MISCELLANEOUS</Text>
+              <Text style={styles.modalBulletPoint}>27. CONTACT US</Text>
 
-              <Text style={styles.modalSectionTitle}>Acceptable Use</Text>
-              <Text style={styles.modalParagraph}>No unlawful, harmful, or infringing activity. No reverse engineering, scraping, or unauthorized access.</Text>
+              <Text style={styles.modalSectionTitle}>1. OUR SERVICES</Text>
+              <Text style={styles.modalParagraph}>Use of the Services may not be lawful in every jurisdiction. You are responsible for compliance with local laws. The Services are not tailored for industry-specific regulations (e.g., HIPAA, FISMA) and must not be used in ways that violate GLBA.</Text>
 
-              <Text style={styles.modalSectionTitle}>Subscriptions</Text>
-              <Text style={styles.modalParagraph}>Purchases and trials are processed by Apple/Google. Billing is handled by those platforms. Taxes may apply. Refunds follow platform rules.</Text>
+              <Text style={styles.modalSectionTitle}>2. INTELLECTUAL PROPERTY RIGHTS</Text>
+              <Text style={styles.modalParagraph}>We (or our licensors) own all intellectual property rights in the Services, including source code, software, designs, text, and graphics ("Content") and marks ("Marks"). Content and Marks are provided "AS IS" for personal, non-commercial use or internal business purposes only. For permissions, contact app.momentum.mobile@gmail.com.</Text>
 
-              <Text style={styles.modalSectionTitle}>Intellectual Property</Text>
-              <Text style={styles.modalParagraph}>We (or our licensors) own the app and all related IP. You own your content. You grant us a limited license to process your content to provide the service.</Text>
+              <Text style={styles.modalSectionTitle}>3. USER REPRESENTATIONS</Text>
+              <Text style={styles.modalParagraph}>You represent that your registration information is accurate and current; you have legal capacity; you are not under 13; you won’t use automated means to access the Services; and your use is lawful.</Text>
 
-              <Text style={styles.modalSectionTitle}>Privacy</Text>
-              <Text style={styles.modalParagraph}>Our Privacy Policy explains how we handle data and is part of these Terms.</Text>
+              <Text style={styles.modalSectionTitle}>4. USER REGISTRATION</Text>
+              <Text style={styles.modalParagraph}>You may be required to register. Keep your password confidential and accept responsibility for account use. We may reclaim usernames that are inappropriate.</Text>
 
-              <Text style={styles.modalSectionTitle}>Availability</Text>
-              <Text style={styles.modalParagraph}>We do not guarantee uninterrupted service. We may suspend or terminate the app or features at any time.</Text>
+              <Text style={styles.modalSectionTitle}>5. PURCHASES AND PAYMENT</Text>
+              <Text style={styles.modalParagraph}>Payments are processed by platform providers (e.g., Apple). Provide accurate account and payment information. Prices may change. All payments are in US dollars.</Text>
 
-              <Text style={styles.modalSectionTitle}>Disclaimer; Liability</Text>
-              <Text style={styles.modalParagraph}>To the fullest extent permitted by law, the app is provided without warranties, and our total liability is limited to the amounts you paid us for the service in the 12 months before the claim, or $50 if none.</Text>
+              <Text style={styles.modalSectionTitle}>6. SUBSCRIPTIONS</Text>
+              <Text style={styles.modalParagraph}>Subscriptions renew automatically unless canceled via iOS App Store Subscriptions. Free trial: 7 days for new users. Purchases are non-refundable. Fee changes may occur and will be communicated as required by law.</Text>
 
-              <Text style={styles.modalSectionTitle}>Termination</Text>
-              <Text style={styles.modalParagraph}>We may suspend or terminate your access for any reason, including violations of these Terms. You may stop using the app at any time.</Text>
+              <Text style={styles.modalSectionTitle}>7. PROHIBITED ACTIVITIES</Text>
+              <Text style={styles.modalParagraph}>Examples (non-exhaustive): data scraping; defrauding users; bypassing security; harmful content; unauthorized automation; IP infringement; unlawful use; reverse engineering; spam; impersonation; overburdening networks; and competing services not permitted.</Text>
 
-              <Text style={styles.modalSectionTitle}>Changes</Text>
-              <Text style={styles.modalParagraph}>We may update these Terms. Continued use after updates means you accept them.</Text>
+              <Text style={styles.modalSectionTitle}>8. AI SERVICES AND LIMITATIONS</Text>
+              <Text style={styles.modalParagraph}>AI-generated content may be inaccurate or unreliable. You must verify all outputs. We use third-party AI providers under their terms. No professional advice is provided. You agree to hold us harmless for consequences arising from AI errors.</Text>
 
-              <Text style={styles.modalSectionTitle}>Contact</Text>
-              <Text style={styles.modalParagraph}>legal@momentum-app.com</Text>
+              <Text style={styles.modalSectionTitle}>9–11. USER CONTENT, LICENSE, AND REVIEWS</Text>
+              <Text style={styles.modalParagraph}>If enabled, contributions and reviews must be lawful and non-infringing. You grant us rights to use suggestions/feedback. We may moderate or remove content at our discretion.</Text>
+
+              <Text style={styles.modalSectionTitle}>12. MOBILE APPLICATION LICENSE</Text>
+              <Text style={styles.modalParagraph}>We grant a limited, revocable, non-transferable license to install and use the App per these terms. Additional conditions apply for Apple/Google distributors.</Text>
+
+              <Text style={styles.modalSectionTitle}>13. SERVICES MANAGEMENT</Text>
+              <Text style={styles.modalParagraph}>We may monitor violations, take legal action, restrict access, and manage Services to protect rights and ensure proper functioning.</Text>
+
+              <Text style={styles.modalSectionTitle}>14. PRIVACY POLICY</Text>
+              <Text style={styles.modalParagraph}>See our Privacy Policy. By using the Services, you agree to it. Services are hosted in the US; by accessing from other regions, you consent to processing in the US. We do not knowingly collect data from children under 13.</Text>
+
+              <Text style={styles.modalSectionTitle}>15–16. TERM; MODIFICATIONS & INTERRUPTIONS</Text>
+              <Text style={styles.modalParagraph}>We may terminate or suspend access without notice. We may change, modify, or remove content and have no obligation to update information. Downtime may occur.</Text>
+
+              <Text style={styles.modalSectionTitle}>17. GOVERNING LAW</Text>
+              <Text style={styles.modalParagraph}>These terms are governed by the laws of the State of California, without regard to conflict-of-law principles.</Text>
+
+              <Text style={styles.modalSectionTitle}>18. DISPUTE RESOLUTION</Text>
+              <Text style={styles.modalParagraph}>Informal negotiations (30 days) followed by binding arbitration (AAA rules) in Orange County, CA, unless otherwise required. No class actions. Certain IP or injunctive matters are excluded.</Text>
+
+              <Text style={styles.modalSectionTitle}>19. CORRECTIONS</Text>
+              <Text style={styles.modalParagraph}>We may correct errors or omissions at any time without prior notice.</Text>
+
+              <Text style={styles.modalSectionTitle}>20. DISCLAIMER</Text>
+              <Text style={styles.modalParagraph}>THE SERVICES ARE PROVIDED "AS IS" AND "AS AVAILABLE". YOU USE THEM AT YOUR OWN RISK. We disclaim all warranties to the fullest extent permitted by law. AI-generated content may be inaccurate; verify all information independently.</Text>
+
+              <Text style={styles.modalSectionTitle}>21. LIMITATIONS OF LIABILITY</Text>
+              <Text style={styles.modalParagraph}>We are not liable for direct/indirect/consequential/special/punitive damages including missed appointments, scheduling errors, data loss, or reliance on information. Liability is limited to the lesser of amounts paid in the prior 6 months or $100.</Text>
+
+              <Text style={styles.modalSectionTitle}>22. INDEMNIFICATION</Text>
+              <Text style={styles.modalParagraph}>You agree to defend, indemnify, and hold us harmless from claims arising from your use, breach of these terms, or violations of third-party rights or law.</Text>
+
+              <Text style={styles.modalSectionTitle}>23. USER DATA</Text>
+              <Text style={styles.modalParagraph}>We may maintain data for performance management. You are responsible for your transmitted data. We are not liable for loss or corruption of such data.</Text>
+
+              <Text style={styles.modalSectionTitle}>24. ELECTRONIC COMMUNICATIONS, TRANSACTIONS, AND SIGNATURES</Text>
+              <Text style={styles.modalParagraph}>You consent to electronic communications and agree that electronic signatures and records satisfy legal requirements for written communications.</Text>
+
+              <Text style={styles.modalSectionTitle}>25. CALIFORNIA USERS AND RESIDENTS</Text>
+              <Text style={styles.modalParagraph}>For unresolved complaints, you may contact the California Department of Consumer Affairs, 1625 North Market Blvd., Suite N-112, Sacramento, CA 95834; (800) 952-5210 or (916) 445-1254.</Text>
+
+              <Text style={styles.modalSectionTitle}>26. MISCELLANEOUS</Text>
+              <Text style={styles.modalParagraph}>These terms constitute the entire agreement. Our failure to enforce any right is not a waiver. We may assign rights/obligations at any time. If any provision is unlawful or unenforceable, the remainder remains in effect.</Text>
+
+              <Text style={styles.modalSectionTitle}>27. CONTACT US</Text>
+              <Text style={styles.modalParagraph}>Momentum: AI Calendar</Text>
+              <Text style={styles.modalParagraph}>Ladera Ranch</Text>
+              <Text style={styles.modalParagraph}>Ladera Ranch, CA 92694</Text>
+              <Text style={styles.modalParagraph}>United States</Text>
+              <Text style={styles.modalParagraph}>Phone: 949-533-8013</Text>
+              <Text style={styles.modalParagraph}>Email: app.momentum.mobile@gmail.com</Text>
             </ScrollView>
           </View>
         </View>

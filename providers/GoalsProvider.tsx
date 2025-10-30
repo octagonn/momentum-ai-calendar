@@ -559,6 +559,13 @@ export const [GoalsProvider, useGoals] = createContextHook<GoalsContextType>(() 
     return () => sub.remove();
   }, [fetchTasks, fetchGoalsFromSupabase]);
 
+  // Filter tasks that belong to locked goals (no notifications, no calendar/home display)
+  const tasks = useMemo(() => {
+    if (!lockedGoalIds || lockedGoalIds.size === 0) return localTasks;
+    return localTasks.filter((t) => !t.goal_id || !lockedGoalIds.has(t.goal_id));
+  }, [localTasks, lockedGoalIds]);
+  const goals = localGoals;
+
   // Auto-cleanup overdue incomplete tasks after 1 week
   useEffect(() => {
     const cleanupOverdueTasks = async () => {
@@ -607,13 +614,6 @@ export const [GoalsProvider, useGoals] = createContextHook<GoalsContextType>(() 
       cleanupOverdueTasks();
     }
   }, [tasks?.length, fetchTasks]);
-
-  // Filter tasks that belong to locked goals (no notifications, no calendar/home display)
-  const tasks = useMemo(() => {
-    if (!lockedGoalIds || lockedGoalIds.size === 0) return localTasks;
-    return localTasks.filter((t) => !t.goal_id || !lockedGoalIds.has(t.goal_id));
-  }, [localTasks, lockedGoalIds]);
-  const goals = localGoals;
 
   const isGoalLocked = useCallback((goalId?: string) => {
     if (!goalId) return false;

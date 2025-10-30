@@ -266,6 +266,10 @@ export default function HomeScreen() {
 
   const { width } = Dimensions.get('window');
   const scrollY = useRef(new Animated.Value(0)).current;
+  const isIpad = Platform.OS === 'ios' && (Platform as any).isPad === true;
+  const headerHeight = isIpad ? 380 : 320;
+  const headerPaddingBottom = isIpad ? 120 : 100;
+  const progressTopMargin = isIpad ? 16 : 0;
   
   const headerOpacity = scrollY.interpolate({
     inputRange: [0, 100],
@@ -374,7 +378,7 @@ export default function HomeScreen() {
       top: 0,
       left: 0,
       right: 0,
-      height: 320,
+      height: headerHeight,
       borderBottomLeftRadius: 30,
       borderBottomRightRadius: 30,
       zIndex: 1,
@@ -385,7 +389,7 @@ export default function HomeScreen() {
       top: 0,
       left: 0,
       right: 0,
-      height: 320,
+      height: headerHeight,
       opacity: 0.15,
       borderBottomLeftRadius: 30,
       borderBottomRightRadius: 30,
@@ -397,7 +401,7 @@ export default function HomeScreen() {
       top: 0,
       left: 0,
       right: 0,
-      height: 320,
+      height: headerHeight,
       borderBottomLeftRadius: 30,
       borderBottomRightRadius: 30,
       zIndex: 1,
@@ -405,8 +409,8 @@ export default function HomeScreen() {
     },
     headerContent: {
       paddingHorizontal: 24,
-      paddingTop: Math.max(30, insets.top + 10),
-      paddingBottom: 100,
+      paddingTop: Math.max(30, insets.top + (isIpad ? 30 : 10)),
+      paddingBottom: headerPaddingBottom,
       zIndex: 5,
     },
     greeting: {
@@ -453,7 +457,7 @@ export default function HomeScreen() {
       marginLeft: 6,
     },
     progressSection: {
-      marginTop: 0,
+      marginTop: progressTopMargin,
       paddingHorizontal: 20,
       zIndex: 10,
       position: 'relative',

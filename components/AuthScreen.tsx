@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { supabase } from '@/lib/supabase-client';
 import { useAuth } from '@/providers/AuthProvider';
 
 const { width } = Dimensions.get('window');
@@ -32,6 +33,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess, onSignUpR
   const [cooldown, setCooldown] = useState<number>(0);
 
   const { signIn, resendVerification } = useAuth();
+  const { resetPassword } = useAuth();
 
   useEffect(() => {
     let timer: any;
@@ -48,7 +50,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess, onSignUpR
 
   const handleSignIn = async () => {
     setLoading(true);
-    const { error } = await signIn(email, password);
+    const { error } = await signIn(email.trim(), password.trim());
     setLoading(false);
 
     if (error) {
@@ -79,6 +81,30 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess, onSignUpR
     } catch (e: any) {
       setLoading(false);
       Alert.alert('Error', e?.message || 'Failed to resend verification email');
+    }
+  };
+
+  const handleSendMagicLink = async () => {
+    if (cooldown > 0) return;
+    try {
+      setLoading(true);
+      const redirectTo = Platform.OS === 'web'
+        ? `${window.location.origin}/auth/callback`
+        : 'momentum://auth/callback';
+      const { error } = await supabase.auth.signInWithOtp({
+        email: (email || '').trim().toLowerCase(),
+        options: { emailRedirectTo: redirectTo, shouldCreateUser: false },
+      });
+      setLoading(false);
+      if (error) {
+        Alert.alert('Error', error.message);
+        return;
+      }
+      setLastResendAt(Date.now());
+      Alert.alert('Magic Link Sent', 'Check your inbox for a login link.');
+    } catch (e: any) {
+      setLoading(false);
+      Alert.alert('Error', e?.message || 'Failed to send magic link');
     }
   };
 
@@ -162,6 +188,27 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess, onSignUpR
                 </Text>
               </TouchableOpacity>
 
+              <TouchableOpacity
+                style={{ alignSelf: 'center', marginBottom: 16 }}
+                onPress={async () => {
+                  if (!email.trim()) {
+                    Alert.alert('Email required', 'Enter your email to reset your password.');
+                    return;
+                  }
+                  setLoading(true);
+                  const { error } = await resetPassword(email.trim().toLowerCase());
+                  setLoading(false);
+                  if (error) {
+                    Alert.alert('Error', error.message);
+                  } else {
+                    Alert.alert('Password reset sent', 'Check your inbox for a reset link.');
+                  }
+                }}
+                disabled={loading}
+              >
+                <Text style={[styles.linkText, { opacity: loading ? 0.6 : 1 }]}>Forgot password?</Text>
+              </TouchableOpacity>
+
                 <Text style={styles.footerText}>
                   {"Don't have an account? "}
                   <Text
@@ -202,6 +249,13 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess, onSignUpR
                 <Text style={styles.acceptButtonText}>
                   {cooldown > 0 ? `Resend in ${Math.floor(cooldown / 60)}:${String(cooldown % 60).padStart(2,'0')}` : 'Resend Verification Email'}
                 </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.acceptButton]}
+                onPress={handleSendMagicLink}
+                disabled={loading}
+              >
+                <Text style={styles.acceptButtonText}>Send Magic Link Instead</Text>
               </TouchableOpacity>
             </View>
           </View>
