@@ -449,6 +449,14 @@ export const [UserProvider, useUser] = createContextHook<UserContextType>(() => 
         console.warn('Failed to apply preauth onboarding profile:', e);
       }
 
+      // Determine effective premium considering trial/expiry timestamps
+      const trialActive = !!effectiveProfile.trial_ends_at && !isNaN(Date.parse(effectiveProfile.trial_ends_at))
+        ? Date.parse(effectiveProfile.trial_ends_at) > Date.now()
+        : false;
+      const paidActive = !!effectiveProfile.subscription_expires_at
+        ? (!isNaN(Date.parse(effectiveProfile.subscription_expires_at)) && Date.parse(effectiveProfile.subscription_expires_at) > Date.now())
+        : true; // treat null as non-expiring active
+
       // Convert database profile to our User interface (use effectiveProfile which includes preauth updates)
       const userData: User = {
         id: effectiveProfile.id,
@@ -465,7 +473,7 @@ export const [UserProvider, useUser] = createContextHook<UserContextType>(() => 
         onboardingCompleted: effectiveProfile.onboarding_completed || false,
         isPremium: (
           (effectiveProfile.subscription_tier === 'premium' || effectiveProfile.subscription_tier === 'family') &&
-          (effectiveProfile.subscription_status === 'active' || effectiveProfile.subscription_status === 'trialing')
+          ((effectiveProfile.subscription_status === 'active' && paidActive) || (effectiveProfile.subscription_status === 'trialing' && trialActive))
         ) || false,
         subscriptionTier: effectiveProfile.subscription_tier || 'free',
         subscriptionStatus: effectiveProfile.subscription_status || 'expired',
@@ -514,6 +522,13 @@ export const [UserProvider, useUser] = createContextHook<UserContextType>(() => 
         return;
       }
 
+      const trialActive2 = !!profile.trial_ends_at && !isNaN(Date.parse(profile.trial_ends_at))
+        ? Date.parse(profile.trial_ends_at) > Date.now()
+        : false;
+      const paidActive2 = !!(profile as any).subscription_expires_at
+        ? (!isNaN(Date.parse((profile as any).subscription_expires_at)) && Date.parse((profile as any).subscription_expires_at) > Date.now())
+        : true;
+
       const userData: any = {
         id: profile.id,
         name: profile.full_name || '',
@@ -530,7 +545,7 @@ export const [UserProvider, useUser] = createContextHook<UserContextType>(() => 
         onboardingCompleted: profile.onboarding_completed || false,
         isPremium: (
           (profile.subscription_tier === 'premium' || profile.subscription_tier === 'family') &&
-          (profile.subscription_status === 'active' || profile.subscription_status === 'trialing')
+          ((profile.subscription_status === 'active' && paidActive2) || (profile.subscription_status === 'trialing' && trialActive2))
         ) || false,
         subscriptionTier: profile.subscription_tier || 'free',
         subscriptionStatus: profile.subscription_status || 'expired',

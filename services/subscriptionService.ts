@@ -223,28 +223,28 @@ class SubscriptionService {
       throw new Error('No user ID available');
     }
 
-    // Update user profile to premium in Supabase
-    // Try to update premium fields, but handle gracefully if they don't exist yet
+    // Persist a 7-day trial using server-side RPC to ensure DB state survives reloads
     try {
       const supa = supabase as any;
-      const { error } = await supa
-        .from('user_profiles')
-        .update({
-          subscription_tier: 'premium',
-          subscription_status: 'active',
-          trial_ends_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), // 7 days from now
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', this.currentUserId);
-
-      if (error) {
-        console.log('Premium columns not found in database, but simulation completed for UI testing');
-        console.log('Database update error (expected):', error.message);
-        return;
+      const { error: rpcError } = await supa.rpc('start_premium_trial', { p_days: 7 });
+      if (rpcError) {
+        console.warn('start_premium_trial RPC failed, falling back to direct profile update:', rpcError?.message || rpcError);
+        // Fallback: direct update (older schemas). Keep trial semantics (trialing + end date)
+        const { error } = await supa
+          .from('user_profiles')
+          .update({
+            subscription_tier: 'premium',
+            subscription_status: 'trialing',
+            trial_ends_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', this.currentUserId);
+        if (error) {
+          console.log('Database update error (expected in some local setups):', error.message);
+        }
       }
     } catch (dbError) {
-      console.log('Simulating premium upgrade (database columns not available yet)');
-      console.log('Database error (expected):', (dbError as any)?.message || dbError);
+      console.log('Simulating premium upgrade (RPC/direct DB update not available):', (dbError as any)?.message || dbError);
     }
 
     // Also update auth.users metadata for premium status
