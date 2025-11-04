@@ -30,7 +30,9 @@ const WEEKENDS: DayOfWeek[] = ['Sat', 'Sun'];
  * - Comma-separated: "Mon, Wed, Fri"
  * - Ranges: "Monday-Friday", "Mon-Fri"
  * - Keywords: "weekdays", "weekends"
- * 
+ *
+ * Example combined with times: "Mon 17:00, Thu 17:00, Sat 10:00" → use parseDayTimes
+ *
  * @param expression The day expression to parse
  * @returns Array of standardized day names (e.g., ['Mon', 'Tue', 'Wed'])
  */
@@ -79,6 +81,64 @@ export function parseDayExpression(expression: string): DayOfWeek[] {
   
   // Preserve the order: Sun -> Sat
   return DAY_NAMES.filter(day => days.has(day));
+}
+
+/**
+ * Extract mapping of days to times from free text like:
+ * "Mon 5pm, Thu 5pm, Sat 10am" or "Monday 17:00, Thursday 17:00, Saturday 10:00"
+ * Returns standardized day keys (Mon, Tue, ...) mapped to 24h HH:MM strings.
+ */
+export function parseDayTimes(expression: string): Record<DayOfWeek, string> {
+  const result: Partial<Record<DayOfWeek, string>> = {};
+  if (!expression) return result as Record<DayOfWeek, string>;
+
+  const items = expression
+    .split(/[;,]+/)
+    .map(s => s.trim())
+    .filter(Boolean);
+
+  for (const item of items) {
+    // Parse time first; support 5pm, 10am, 17:00, 5:30 pm
+    const timeMatch = item.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i);
+    const hasColon = /\b\d{1,2}:\d{2}\b/.test(item);
+    const hasAmPm = /\b(am|pm)\b/i.test(item);
+    if (!timeMatch || (!hasColon && !hasAmPm)) continue;
+    let hour = parseInt(timeMatch[1]);
+    const minute = timeMatch[2] ? parseInt(timeMatch[2]) : 0;
+    const ap = timeMatch[3]?.toLowerCase();
+    if (ap) {
+      if (ap === 'pm' && hour < 12) hour += 12;
+      if (ap === 'am' && hour === 12) hour = 0;
+    }
+    hour = Math.min(23, Math.max(0, hour));
+    const mm = Math.min(59, Math.max(0, minute));
+    const hhStr = String(hour).padStart(2, '0');
+    const mmStr = String(mm).padStart(2, '0');
+    const time24 = `${hhStr}:${mmStr}`;
+
+    // Find all day tokens in the segment and assign the same time to each
+    const lower = item.toLowerCase();
+    const matchedDays: Set<DayOfWeek> = new Set();
+    for (const [key, value] of Object.entries(DAY_MAP)) {
+      if (new RegExp(`(^|[^a-z])${key}([^a-z]|$)`, 'i').test(lower)) {
+        matchedDays.add(value);
+      }
+    }
+    // If no day tokens explicitly found, try to infer a single day by tokenizing
+    if (matchedDays.size === 0) {
+      const tokens = item.split(/\s+/);
+      for (const t of tokens) {
+        const lc = t.toLowerCase().replace(/[^a-z]/g, '');
+        const mapped = (DAY_MAP as any)[lc] as DayOfWeek | undefined;
+        if (mapped) matchedDays.add(mapped);
+      }
+    }
+    matchedDays.forEach(d => {
+      result[d] = time24;
+    });
+  }
+
+  return result as Record<DayOfWeek, string>;
 }
 
 /**

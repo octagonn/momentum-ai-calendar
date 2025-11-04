@@ -26,9 +26,13 @@ const createFreshClient = () => {
     },
     auth: {
       persistSession: true,
-      storage: AsyncStorage,
+      // Use native AsyncStorage on mobile; default web storage on web
+      storage: Platform.OS === 'web' ? undefined : (AsyncStorage as any),
       autoRefreshToken: true,
-      detectSessionInUrl: false
+      // Detect sessions in the URL on web for email/OTP flows
+      detectSessionInUrl: Platform.OS === 'web',
+      // Use PKCE flow on web for improved security
+      flowType: Platform.OS === 'web' ? 'pkce' : 'implicit',
     },
     realtime: {
       params: {
@@ -86,9 +90,10 @@ export const createNewSupabaseClient = () => {
     },
     auth: {
       persistSession: true,
-      storage: AsyncStorage,
+      storage: Platform.OS === 'web' ? undefined : (AsyncStorage as any),
       autoRefreshToken: true,
-      detectSessionInUrl: false
+      detectSessionInUrl: Platform.OS === 'web',
+      flowType: Platform.OS === 'web' ? 'pkce' : 'implicit',
     }
   });
 };

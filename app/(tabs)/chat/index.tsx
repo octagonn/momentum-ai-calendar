@@ -12,17 +12,21 @@ import {
   Alert,
   ImageBackground,
 } from 'react-native';
-import { Send, Bot, CheckCircle, Sparkles, MessageSquare, Target, Crown, Plus } from 'lucide-react-native';
+import { Send, CheckCircle, Sparkles, MessageSquare, Target, Crown, Plus } from 'lucide-react-native';
+import { Image } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/providers/ThemeProvider';
 import { useAuth } from '@/providers/AuthProvider';
+import { useUser } from '@/providers/UserProvider';
 import { useSubscription } from '@/providers/SubscriptionProvider';
+import { useNotifications } from '@/providers/NotificationProvider';
 import { aiService } from '@/lib/ai-service';
 import { ensureUserProfile } from '@/services/goalPlanning';
 import { notificationService } from '@/services/notifications';
 import { supabase } from '@/lib/supabase-client';
 import { router } from 'expo-router';
 import * as Haptics from 'expo-haptics';
+import { shadowSm, shadowMd, insetTopLight, insetBottomDark } from '@/ui/depth';
 
 interface Message {
   id: string;
@@ -34,7 +38,9 @@ interface Message {
 export default function ChatScreen() {
   const { colors, isDark, isGalaxy } = useTheme();
   const { user } = useAuth();
+  const { user: profile } = useUser();
   const { isPremium } = useSubscription();
+  const { preferences: notificationPreferences } = useNotifications();
   const insets = useSafeAreaInsets();
   const scrollViewRef = useRef<ScrollView>(null);
   
@@ -284,8 +290,15 @@ export default function ChatScreen() {
         content: userMessage
       });
 
-      // Call AI service to get response
-      const response = await aiService.generateResponse(conversationHistory);
+      // Call AI service to get response with optional onboarding context
+      const response = await aiService.generateResponse(conversationHistory, {
+        age: profile?.age ?? null,
+        gender: profile?.gender ?? null,
+        heightCm: profile?.heightCm ?? null,
+        weightKg: profile?.weightKg ?? null,
+        unitSystem: profile?.unitSystem ?? null,
+        dateOfBirth: profile?.dateOfBirth ?? null,
+      });
       
       if (response.success && response.message) {
         addMessage('assistant', response.message);
@@ -322,8 +335,13 @@ export default function ChatScreen() {
       // Ensure user profile exists
       await ensureUserProfile(supabase, user.id);
 
-      // Call the AI service to create the goal plan from the conversation
-      const planResponse = await aiService.createGoalFromConversation(conversationHistory);
+      // Call the AI service to create the goal plan from the conversation, with optional user context
+      const planResponse = await aiService.createGoalFromConversation(conversationHistory, {
+        age: profile?.age ?? null,
+        gender: profile?.gender ?? null,
+        heightCm: profile?.heightCm ?? null,
+        weightKg: profile?.weightKg ?? null,
+      });
       
       if (planResponse.success && planResponse.goal && planResponse.tasks) {
         // The database function will automatically assign a color if not provided
@@ -340,7 +358,9 @@ export default function ChatScreen() {
 
         // Schedule notifications for the tasks
         try {
-          await notificationService.scheduleMultipleTaskNotifications(planResponse.tasks);
+          // Get user's reminder preference from notification settings
+          const reminderMinutes = notificationPreferences.taskReminderMinutes || 15;
+          await notificationService.scheduleMultipleTaskNotifications(planResponse.tasks, reminderMinutes);
         } catch (notificationError) {
           console.warn('Failed to schedule notifications:', notificationError);
         }
@@ -379,8 +399,8 @@ export default function ChatScreen() {
 
     return (
       <View style={styles.starterContainer}>
-        <View style={[styles.welcomeCard, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(255, 255, 255, 0.8)' }]}>
-          <Bot size={32} color={colors.primary} />
+          <View style={[styles.welcomeCard, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(255, 255, 255, 0.8)' }]}> 
+          <Image source={require('@/assets/images/ai-assistant-icon-1.png')} style={{ width: 120, height: 120 }} resizeMode="contain" />
           <Text style={[styles.welcomeTitle, { color: colors.text }]}>
             AI Chat Assistant
           </Text>
@@ -439,13 +459,18 @@ export default function ChatScreen() {
     return (
       <View key={message.id} style={[styles.messageContainer, isUser ? styles.userMessage : styles.assistantMessage]}>
         {!isUser && (
-          <View style={[styles.avatar, { backgroundColor: colors.primary }]}>
-            <Bot size={16} color={colors.background} />
+          <View style={[styles.avatar, { backgroundColor: colors.primary }]}> 
+            <Image source={require('@/assets/images/ai-chat-icon.png')} style={{ width: 18, height: 18 }} resizeMode="contain" />
           </View>
         )}
-        <View style={[styles.messageBubble, isUser ? styles.userBubble : styles.assistantBubble]}>
-          <Text style={[styles.messageText, isUser ? styles.userText : styles.assistantText]}>
-            {message.content}
+        <View style={[
+          styles.messageBubble,
+          isUser 
+            ? [styles.userBubble, { backgroundColor: colors.primary }, shadowMd(isDark)]
+            : [styles.assistantBubble, { backgroundColor: colors.card }, shadowSm(isDark)]
+        ]}>
+          <Text style={[styles.messageText, { color: isUser ? 'white' : colors.text }]}>
+            {renderMarkdownBold(message.content)}
           </Text>
           <Text style={[styles.timestamp, isUser ? styles.userTimestamp : styles.assistantTimestamp]}>
             {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -453,6 +478,28 @@ export default function ChatScreen() {
         </View>
       </View>
     );
+  };
+
+  // Minimal markdown renderer for bold (**text**). Preserves newlines.
+  const renderMarkdownBold = (text: string) => {
+    const lines = text.split('\n');
+    return lines.map((line, lineIdx) => (
+      <React.Fragment key={`ln-${lineIdx}`}>
+        {line.split(/(\*\*[^*]+\*\*)/g).map((part, idx) => {
+          const isBold = /^\*\*[^*]+\*\*$/.test(part);
+          if (isBold) {
+            const inner = part.slice(2, -2);
+            return (
+              <Text key={`b-${lineIdx}-${idx}`} style={{ fontWeight: '700' }}>
+                {inner}
+              </Text>
+            );
+          }
+          return <React.Fragment key={`t-${lineIdx}-${idx}`}>{part}</React.Fragment>;
+        })}
+        {lineIdx < lines.length - 1 ? '\n' : null}
+      </React.Fragment>
+    ));
   };
 
   return (
@@ -566,12 +613,9 @@ export default function ChatScreen() {
 
       {/* Input */}
       <View style={[styles.inputContainer, { borderTopColor: colors.border }]}>
+        <View style={{ flex: 1, position: 'relative' }}>
           <TextInput
-          style={[styles.textInput, { 
-            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(255, 255, 255, 0.8)', 
-            color: colors.text,
-            borderColor: colors.border 
-          }]}
+          style={[styles.textInput, { backgroundColor: colors.card, color: colors.text }, shadowSm(isDark)]}
           value={inputText}
           onChangeText={setInputText}
           placeholder="Type your message..."
@@ -581,6 +625,9 @@ export default function ChatScreen() {
           editable={!isLoading && !isCreating}
           onSubmitEditing={handleKeyPress}
         />
+          <View pointerEvents="none" style={insetTopLight(colors as any, isDark, 0.08)} />
+          <View pointerEvents="none" style={insetBottomDark(colors as any, isDark, 0.08)} />
+        </View>
           <TouchableOpacity
             style={[
               styles.sendButton,
@@ -777,7 +824,7 @@ const styles = StyleSheet.create({
   },
   textInput: {
     flex: 1,
-    borderWidth: 1,
+    borderWidth: 0,
     borderRadius: 20,
     paddingHorizontal: 16,
     paddingVertical: 12,

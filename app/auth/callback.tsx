@@ -16,6 +16,7 @@ export default function AuthCallback() {
         // Get URL parameters - they might come from deep link or route params
         const access_token = params.access_token as string;
         const refresh_token = params.refresh_token as string;
+        const code = params.code as string; // PKCE/code flow (web)
         const type = params.type as string;
         const error_description = params.error_description as string;
         
@@ -27,7 +28,25 @@ export default function AuthCallback() {
           return;
         }
 
-        // If we have tokens in the URL, set the session
+        // PKCE/code flow on web
+        if (code && typeof window !== 'undefined') {
+          try {
+            const { data, error: exchangeError } = await supabase.auth.exchangeCodeForSession(window.location.href);
+            if (exchangeError) {
+              console.error('Error exchanging code for session:', exchangeError);
+              setError(exchangeError.message);
+            } else if (data.session) {
+              console.log('Session established via code exchange:', data.session.user?.email);
+              await new Promise(resolve => setTimeout(resolve, 500));
+              router.replace('/(tabs)/(home)/home');
+              return;
+            }
+          } catch (e: any) {
+            console.error('Unexpected error during code exchange:', e);
+          }
+        }
+
+        // If we have tokens in the URL or deep link, set the session (implicit flow)
         if (access_token && refresh_token) {
           console.log('Setting session from URL tokens');
           const { data, error: sessionError } = await supabase.auth.setSession({

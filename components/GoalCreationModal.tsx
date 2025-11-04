@@ -16,6 +16,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/providers/ThemeProvider';
 import { useAuth } from '@/providers/AuthProvider';
 import { useGoals } from '@/providers/GoalsProvider';
+import { useUser } from '@/providers/UserProvider';
 import { aiService } from '@/lib/ai-service';
 
 interface Message {
@@ -68,6 +69,7 @@ type ConversationStage = typeof CONVERSATION_STAGES[keyof typeof CONVERSATION_ST
 export default function GoalCreationModal({ visible, onClose, onGoalCreated, editingGoal }: GoalCreationModalProps) {
   const { colors, isDark } = useTheme();
   const { user } = useAuth();
+  const { user: userProfile } = useUser();
   const { addGoal } = useGoals();
   const insets = useSafeAreaInsets();
   const scrollViewRef = useRef<ScrollView>(null);
@@ -188,7 +190,14 @@ export default function GoalCreationModal({ visible, onClose, onGoalCreated, edi
       const response = await aiService.generateResponse([
         { role: 'system', content: systemPrompt },
         { role: 'user', content: `${userPrompt}\n\nCurrent goal data: ${JSON.stringify(goalData)}` }
-      ]);
+      ], {
+        age: userProfile?.age ?? null,
+        gender: userProfile?.gender ?? null,
+        heightCm: userProfile?.heightCm ?? null,
+        weightKg: userProfile?.weightKg ?? null,
+        unitSystem: userProfile?.unitSystem ?? null,
+        dateOfBirth: userProfile?.dateOfBirth ?? null,
+      });
 
       addMessage('assistant', response.content);
       
@@ -487,6 +496,13 @@ export default function GoalCreationModal({ visible, onClose, onGoalCreated, edi
           category: generatedPlan.category || 'personal',
           target: generatedPlan.target || 100,
           unit: generatedPlan.unit || 'points'
+        }, {
+          age: userProfile?.age ?? null,
+          gender: userProfile?.gender ?? null,
+          heightCm: userProfile?.heightCm ?? null,
+          weightKg: userProfile?.weightKg ?? null,
+          unitSystem: userProfile?.unitSystem ?? null,
+          dateOfBirth: userProfile?.dateOfBirth ?? null,
         });
 
         const newGoal = {

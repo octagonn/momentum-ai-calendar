@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { AppState } from 'react-native';
 import { useAuth } from './AuthProvider';
 import { useUser } from './UserProvider';
 import { subscriptionService, SubscriptionTier } from '../services/subscriptionService';
@@ -43,8 +44,48 @@ export const SubscriptionProvider: React.FC<SubscriptionProviderProps> = ({ chil
   const [modalTrigger, setModalTrigger] = useState<'goal_limit' | 'ai_goal' | 'color_picker' | 'analytics' | 'general'>('general');
   const [mockPremiumStatus, setMockPremiumStatus] = useState<boolean>(false); // For testing when DB migration is missing
   
-  const isPremium = userProfile?.isPremium || mockPremiumStatus || false;
-  const subscriptionTier = userProfile?.subscriptionTier || (mockPremiumStatus ? 'premium' : 'free');
+  // Compute premium with admin override: if admin_premium_until is in future or infinity and tier is premium/family
+  const adminOverrideActive = (() => {
+    const until = (userProfile as any)?.admin_premium_until as string | undefined;
+    const tier = (userProfile as any)?.admin_premium_tier as 'free' | 'premium' | 'family' | undefined;
+    if (!until || !tier) return false;
+    if (!(tier === 'premium' || tier === 'family')) return false;
+    if (until.toLowerCase() === 'infinity') return true;
+    const ts = Date.parse(until);
+    return !isNaN(ts) && ts > Date.now();
+  })();
+
+  // Use paid plan if tier is premium/family AND status is active or trialing
+  const hasActivePaidPlan = (
+    (userProfile?.subscriptionTier === 'premium' || userProfile?.subscriptionTier === 'family') &&
+    (userProfile?.subscriptionStatus === 'active' || userProfile?.subscriptionStatus === 'trialing')
+  );
+
+  // Source of truth: database values from userProfile. Admin override augments DB.
+  // In Expo Go/testing, allow mockPremiumStatus to reflect simulated purchases in UI.
+  const isPremium = adminOverrideActive || hasActivePaidPlan || mockPremiumStatus || false;
+  const subscriptionTier = adminOverrideActive
+    ? (((userProfile as any)?.admin_premium_tier as SubscriptionTier) || 'premium')
+    : (mockPremiumStatus ? 'premium' : (userProfile?.subscriptionTier || 'free'));
+
+  // Note: We no longer auto-clear mock premium when DB shows free. This ensures
+  // simulated purchases and manual testing can enable Premium reliably in Expo Go.
+  // Use resetPremiumStatus() to clear the mock flag when needed.
+  
+  // Define before any effects that reference it to avoid TDZ on web
+  const checkSubscriptionStatus = useCallback(async () => {
+    if (!authUser) return;
+    
+    try {
+      // Sync subscription status with RevenueCat
+      await subscriptionService.syncSubscriptionStatus();
+      
+      // Refresh user profile to get updated subscription info
+      await refreshUser();
+    } catch (error) {
+      console.error('Error checking subscription status:', error);
+    }
+  }, [authUser, refreshUser]);
   
   useEffect(() => {
     if (authUser) {
@@ -54,10 +95,19 @@ export const SubscriptionProvider: React.FC<SubscriptionProviderProps> = ({ chil
     }
   }, [authUser]);
 
-  // Load persistent premium status on startup
+  // Re-verify receipt on foreground to reflect App Store changes (renewal/expiry)
   useEffect(() => {
-    loadPersistentPremiumStatus();
-  }, []);
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active' && authUser) {
+        checkSubscriptionStatus();
+      }
+    });
+    return () => sub.remove();
+  }, [authUser, checkSubscriptionStatus]);
+
+  // In dev, we previously supported a mock premium. We no longer auto-load
+  // mock state so DB remains the single source of truth. Uncomment for testing only.
+  // useEffect(() => { loadPersistentPremiumStatus(); }, []);
 
   // Cleanup modal state when user changes
   useEffect(() => {
@@ -108,20 +158,6 @@ export const SubscriptionProvider: React.FC<SubscriptionProviderProps> = ({ chil
       setIsLoading(false);
     }
   };
-  
-  const checkSubscriptionStatus = useCallback(async () => {
-    if (!authUser) return;
-    
-    try {
-      // Sync subscription status with RevenueCat
-      await subscriptionService.syncSubscriptionStatus();
-      
-      // Refresh user profile to get updated subscription info
-      await refreshUser();
-    } catch (error) {
-      console.error('Error checking subscription status:', error);
-    }
-  }, [authUser, refreshUser]);
   
   const showUpgradeModal = useCallback((
     trigger: 'goal_limit' | 'ai_goal' | 'color_picker' | 'analytics' | 'general' = 'general'

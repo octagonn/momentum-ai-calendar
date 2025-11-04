@@ -6,10 +6,12 @@ import { Goal } from "@/types/goal";
 import { supabase } from "@/lib/supabase-client";
 import { getItem, setItem } from "@/lib/storage";
 import { checkAndUpdateDayStreak } from "@/services/dayStreakService";
+import { useSubscription } from "./SubscriptionProvider";
 
 interface GoalsContextType {
   tasks: Task[];
   goals: Goal[];
+  isGoalLocked: (goalId: string | undefined) => boolean;
   toggleTask: (taskId: string) => void;
   updateGoal: (goalId: string, updates: Partial<Goal>) => void;
   addGoal: (goal: Goal, tasks?: any[]) => Promise<void>;
@@ -37,28 +39,41 @@ export const [GoalsProvider, useGoals] = createContextHook<GoalsContextType>(() 
   const [localTasks, setLocalTasks] = useState<Task[]>(defaultTasks);
   const [localGoals, setLocalGoals] = useState<Goal[]>(defaultGoals);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const { isPremium } = useSubscription();
+  const [lockedGoalIds, setLockedGoalIds] = useState<Set<string>>(new Set());
+  const [realtimeRefreshToken, setRealtimeRefreshToken] = useState(0);
 
-  // Monitor auth state changes and clear data on user change
+  // Monitor auth state changes and clear data only on real sign-outs or user switch
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         const newUserId = session?.user?.id || null;
-        
         console.log('GoalsProvider: Auth state changed:', event, 'User ID:', newUserId);
-        
-        // If user changed (logout or different user login), clear all data
-        if (currentUserId !== newUserId) {
-          console.log('GoalsProvider: User changed from', currentUserId, 'to', newUserId);
-          
-          // Clear state immediately to prevent showing old user's data
+
+        if (event === 'SIGNED_OUT') {
+          // Real sign-out: clear all data
+          console.log('GoalsProvider: SIGNED_OUT - clearing local data');
           setLocalTasks([]);
           setLocalGoals([]);
-          
-          // Clear AsyncStorage
           setItem('tasks', JSON.stringify([])).catch(console.warn);
           setItem('goals', JSON.stringify([])).catch(console.warn);
-          
-          // Update current user ID - this will trigger data fetch via useEffect dependency
+          setCurrentUserId(null);
+          return;
+        }
+
+        // On user switch (different ID), clear and refetch for the new user
+        if (newUserId && currentUserId && currentUserId !== newUserId) {
+          console.log('GoalsProvider: User switched from', currentUserId, 'to', newUserId, '- resetting state');
+          setLocalTasks([]);
+          setLocalGoals([]);
+          setItem('tasks', JSON.stringify([])).catch(console.warn);
+          setItem('goals', JSON.stringify([])).catch(console.warn);
+          setCurrentUserId(newUserId);
+          return;
+        }
+
+        // On signed in/refresh/initial session with same user, just ensure ID is set without clearing caches
+        if (newUserId && !currentUserId) {
           setCurrentUserId(newUserId);
         }
       }
@@ -72,7 +87,7 @@ export const [GoalsProvider, useGoals] = createContextHook<GoalsContextType>(() 
     loadLocalData();
   }, []);
 
-  // Set up real-time listener for goals
+  // Set up real-time listener for goals; refresh when token increments (e.g., app resume)
   useEffect(() => {
     const setupRealtimeListener = async () => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -146,20 +161,29 @@ export const [GoalsProvider, useGoals] = createContextHook<GoalsContextType>(() 
           }, 
           (payload) => {
             console.log('Tasks table changed:', payload);
+            console.log('Current local tasks count before update:', localTasks.length);
             
             // Update local state immediately for better UX
             if (payload.eventType === 'UPDATE' && payload.new) {
-              setLocalTasks(prevTasks => 
-                prevTasks.map(task => 
+              setLocalTasks(prevTasks => {
+                const updated = prevTasks.map(task => 
                   task.id === payload.new.id ? { ...task, ...payload.new } : task
-                )
-              );
+                );
+                console.log('Updated tasks after UPDATE:', updated.length);
+                return updated;
+              });
             } else if (payload.eventType === 'INSERT' && payload.new) {
-              setLocalTasks(prevTasks => [...prevTasks, payload.new]);
+              setLocalTasks(prevTasks => {
+                const updated = [...prevTasks, payload.new];
+                console.log('Updated tasks after INSERT:', updated.length);
+                return updated;
+              });
             } else if (payload.eventType === 'DELETE' && payload.old) {
-              setLocalTasks(prevTasks => 
-                prevTasks.filter(task => task.id !== payload.old.id)
-              );
+              setLocalTasks(prevTasks => {
+                const updated = prevTasks.filter(task => task.id !== payload.old.id);
+                console.log('Updated tasks after DELETE:', updated.length);
+                return updated;
+              });
             }
             
             // Also refresh from database to ensure data consistency
@@ -181,7 +205,7 @@ export const [GoalsProvider, useGoals] = createContextHook<GoalsContextType>(() 
     return () => {
       cleanup.then(cleanupFn => cleanupFn?.());
     };
-  }, []);
+  }, [realtimeRefreshToken]);
 
   const loadLocalData = async () => {
     try {
@@ -218,6 +242,53 @@ export const [GoalsProvider, useGoals] = createContextHook<GoalsContextType>(() 
 
       if (error) {
         console.error('Error fetching goals from Supabase:', error);
+        // Retry once on auth/RLS errors
+        if ((error.code === '42501') || (error.message && (error.message.includes('JWT') || error.message.includes('permission denied') || error.message.includes('Unauthorized')))) {
+          try {
+            await supabase.auth.refreshSession();
+            const retry = await supabase
+              .from('goals')
+              .select('*')
+              .eq('user_id', user.id)
+              .order('created_at', { ascending: false });
+            if (retry.error) {
+              console.error('Retry failed fetching goals:', retry.error);
+              return;
+            }
+            const retryGoals = retry.data || [];
+            if (!retryGoals || retryGoals.length === 0) {
+              setLocalGoals([]);
+              return;
+            }
+            const goalsWithProgress = await Promise.all(retryGoals.map(async (goal) => {
+              const { data: tasks, error: tasksError } = await supabase
+                .from('tasks')
+                .select('id, status')
+                .eq('goal_id', goal.id);
+              if (tasksError) {
+                console.error('Error fetching tasks for goal (retry):', tasksError);
+              }
+              const totalTasks = tasks?.length || 0;
+              const completedTasks = tasks?.filter(t => t.status === 'done').length || 0;
+              const progress = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+              return {
+                id: goal.id,
+                title: goal.title,
+                description: goal.description,
+                target_date: goal.target_date,
+                status: goal.status,
+                progress,
+                created_at: goal.created_at,
+                updated_at: goal.updated_at,
+                color: goal.color || '#3B82F6',
+                plan: goal.plan,
+              };
+            }));
+            setLocalGoals(goalsWithProgress);
+          } catch (e) {
+            console.warn('Supabase session refresh failed during goals fetch:', e);
+          }
+        }
         return;
       }
 
@@ -265,6 +336,56 @@ export const [GoalsProvider, useGoals] = createContextHook<GoalsContextType>(() 
     }
   }, []);
 
+  // Compute locked goals whenever goals or subscription changes
+  useEffect(() => {
+    try {
+      if (isPremium) {
+        setLockedGoalIds(new Set());
+        return;
+      }
+      // Free tier: only 1 active (incomplete) goal accessible
+      // Choose the goal with the next closest upcoming target_date; if none, fall back to oldest created_at
+      const now = new Date();
+      const activeIncomplete = (localGoals || [])
+        .filter((g) => g.status === 'active' && g.progress !== 100);
+      if (activeIncomplete.length <= 1) {
+        setLockedGoalIds(new Set());
+        return;
+      }
+      const withFutureDates = activeIncomplete
+        .filter((g) => g.target_date && new Date(g.target_date) > now)
+        .sort((a, b) => new Date(a.target_date as string).getTime() - new Date(b.target_date as string).getTime());
+
+      let sorted: typeof activeIncomplete;
+      if (withFutureDates.length > 0) {
+        // Prefer soonest upcoming target date
+        sorted = [withFutureDates[0], ...activeIncomplete.filter(g => g !== withFutureDates[0])];
+      } else {
+        // Fallback: oldest created_at first
+        sorted = [...activeIncomplete].sort((a, b) => {
+          const ta = a.created_at ? new Date(a.created_at).getTime() : 0;
+          const tb = b.created_at ? new Date(b.created_at).getTime() : 0;
+          return ta - tb;
+        });
+      }
+      const accessible = sorted[0];
+      const locked = new Set<string>();
+      for (let i = 1; i < sorted.length; i++) {
+        if (sorted[i].id) locked.add(sorted[i].id);
+      }
+      // If some goals came from views with goal_id, include those too
+      (localGoals || []).forEach((g: any) => {
+        if (g.goal_id && locked.has(g.goal_id)) {
+          locked.add(g.goal_id);
+        }
+      });
+      setLockedGoalIds(locked);
+    } catch (e) {
+      console.warn('Error computing locked goals:', e);
+      setLockedGoalIds(new Set());
+    }
+  }, [localGoals, isPremium]);
+
   // Fetch data from Supabase
   const [isLoading, setIsLoading] = useState(false);
 
@@ -286,6 +407,53 @@ export const [GoalsProvider, useGoals] = createContextHook<GoalsContextType>(() 
 
       if (error) {
         console.warn('Failed to fetch tasks from Supabase:', error);
+        if ((error.code === '42501') || (error.message && (error.message.includes('JWT') || error.message.includes('permission denied') || error.message.includes('Unauthorized')))) {
+          try {
+            await supabase.auth.refreshSession();
+            const retry = await supabase
+              .from('tasks')
+              .select('*')
+              .eq('user_id', user.id)
+              .order('created_at', { ascending: false });
+            if (retry.error) {
+              console.error('Retry failed fetching tasks:', retry.error);
+              return;
+            }
+            const data = retry.data;
+            if (data) {
+              const tasks = await Promise.all(data.map(async (task) => {
+                let goalTitle = localGoals.find(goal => goal.id === task.goal_id)?.title;
+                if (!goalTitle && task.goal_id) {
+                  try {
+                    const { data: goalData, error } = await supabase
+                      .from('goals')
+                      .select('title')
+                      .eq('id', task.goal_id)
+                      .single();
+                    if (!error && goalData) {
+                      goalTitle = goalData.title;
+                    }
+                  } catch (error) {
+                    console.error('Error fetching goal title:', error);
+                  }
+                }
+                return {
+                  id: task.id,
+                  title: task.title,
+                  description: task.notes || '',
+                  completed: task.status === 'done',
+                  due_at: task.due_at,
+                  goal_id: task.goal_id,
+                  goalTitle: goalTitle || 'Untitled Goal',
+                  duration_minutes: task.duration_minutes,
+                };
+              }));
+              setLocalTasks(tasks);
+            }
+          } catch (e) {
+            console.warn('Supabase session refresh failed during tasks fetch:', e);
+          }
+        }
         return;
       }
 
@@ -377,6 +545,27 @@ export const [GoalsProvider, useGoals] = createContextHook<GoalsContextType>(() 
     }
   }, [fetchTasks, fetchGoalsFromSupabase, currentUserId]);
 
+  // Refresh data and realtime on app resume
+  useEffect(() => {
+    const { AppState } = require('react-native');
+    const sub = AppState.addEventListener('change', (state: string) => {
+      if (state === 'active') {
+        console.log('GoalsProvider: App became active - refreshing data and realtime');
+        setRealtimeRefreshToken((t) => t + 1);
+        fetchTasks();
+        fetchGoalsFromSupabase();
+      }
+    });
+    return () => sub.remove();
+  }, [fetchTasks, fetchGoalsFromSupabase]);
+
+  // Filter tasks that belong to locked goals (no notifications, no calendar/home display)
+  const tasks = useMemo(() => {
+    if (!lockedGoalIds || lockedGoalIds.size === 0) return localTasks;
+    return localTasks.filter((t) => !t.goal_id || !lockedGoalIds.has(t.goal_id));
+  }, [localTasks, lockedGoalIds]);
+  const goals = localGoals;
+
   // Auto-cleanup overdue incomplete tasks after 1 week
   useEffect(() => {
     const cleanupOverdueTasks = async () => {
@@ -426,9 +615,10 @@ export const [GoalsProvider, useGoals] = createContextHook<GoalsContextType>(() 
     }
   }, [tasks?.length, fetchTasks]);
 
-  // Use local data
-  const tasks = localTasks;
-  const goals = localGoals;
+  const isGoalLocked = useCallback((goalId?: string) => {
+    if (!goalId) return false;
+    return lockedGoalIds.has(goalId);
+  }, [lockedGoalIds]);
 
   const toggleTask = useCallback(async (taskId: string) => {
     if (!tasks) return;
@@ -647,16 +837,21 @@ export const [GoalsProvider, useGoals] = createContextHook<GoalsContextType>(() 
   const deleteGoal = useCallback(async (goalId: string) => {
     if (!goals) return;
     
-    // Optimistic update
+    // Optimistic update: remove goal
     const updatedGoals = goals.filter(g => g.id !== goalId);
     setLocalGoals(updatedGoals);
-    
-    // Save to local storage
     setItem('goals', JSON.stringify(updatedGoals)).catch((error) => {
       console.error('Error saving goals locally:', error);
     });
 
-    // Delete from Supabase
+    // Optimistic update: also remove any tasks tied to this goal so UI updates instantly
+    const updatedTasks = localTasks.filter((t) => t.goal_id !== goalId);
+    setLocalTasks(updatedTasks);
+    setItem('tasks', JSON.stringify(updatedTasks)).catch((error) => {
+      console.error('Error saving tasks locally:', error);
+    });
+
+    // Delete from Supabase (goal + any orphan tasks as a fallback)
     try {
       const { error } = await supabase
         .from('goals')
@@ -668,16 +863,31 @@ export const [GoalsProvider, useGoals] = createContextHook<GoalsContextType>(() 
         // Rollback optimistic update
         setLocalGoals(goals);
         setItem('goals', JSON.stringify(goals)).catch(console.warn);
+        setLocalTasks(localTasks);
+        setItem('tasks', JSON.stringify(localTasks)).catch(console.warn);
         throw error;
       }
+
+      // Best-effort cleanup for tasks (in case DB does not cascade)
+      try {
+        await supabase.from('tasks').delete().eq('goal_id', goalId);
+      } catch (e) {
+        console.warn('Best-effort task cleanup failed (safe to ignore if cascade is enabled):', e);
+      }
+
+      // Re-sync tasks/goals from server to ensure consistency
+      fetchTasks();
+      fetchGoalsFromSupabase();
     } catch (error) {
       console.error('Error deleting goal:', error);
       // Rollback optimistic update
       setLocalGoals(goals);
       setItem('goals', JSON.stringify(goals)).catch(console.warn);
+      setLocalTasks(localTasks);
+      setItem('tasks', JSON.stringify(localTasks)).catch(console.warn);
       throw error;
     }
-  }, [goals]);
+  }, [goals, localTasks, fetchTasks, fetchGoalsFromSupabase]);
 
   const getTasksStats = useCallback(() => {
     if (!tasks) return { total: 0, completed: 0, weeklyProgress: 0 };
@@ -738,6 +948,7 @@ export const [GoalsProvider, useGoals] = createContextHook<GoalsContextType>(() 
   return useMemo(() => ({
     tasks,
     goals,
+    isGoalLocked,
     toggleTask,
     updateGoal,
     addGoal,
@@ -748,5 +959,5 @@ export const [GoalsProvider, useGoals] = createContextHook<GoalsContextType>(() 
     getTodaysProgress,
     refreshTasks,
     refreshGoals,
-  }), [tasks, goals, isLoading, toggleTask, updateGoal, addGoal, deleteGoal, getTasksStats, getGoalProgress, getTodaysProgress, refreshTasks, refreshGoals]);
+  }), [tasks, goals, isLoading, isGoalLocked, toggleTask, updateGoal, addGoal, deleteGoal, getTasksStats, getGoalProgress, getTodaysProgress, refreshTasks, refreshGoals]);
 });

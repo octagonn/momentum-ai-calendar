@@ -7,7 +7,7 @@
     "icon": "./assets/images/app-store-logo.png",
     "scheme": "momentum",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
     "sdkVersion": "54.0.0",
     "projectId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
     "_comment": "Using app-store-logo.png as the main app icon. Other icons (adaptive, favicon, splash) use icon.png as fallback.",
@@ -19,7 +19,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.momentumaicalendar.app",
-      "buildNumber": "1",
+      "buildNumber": "3",
       "infoPlist": {
         "NSUserNotificationsUsageDescription": "We send you reminders to help you stay on track with your goals and tasks.",
         "NSCameraUsageDescription": "Upload a profile picture or attach images to your goals.",
@@ -28,7 +28,9 @@
       "config": {
         "usesNonExemptEncryption": false
       },
-      "associatedDomains": ["applinks:rork.com"]
+      "associatedDomains": [
+        "applinks:rork.com"
+      ]
     },
     "android": {
       "adaptiveIcon": {
@@ -50,7 +52,10 @@
               "pathPrefix": "/auth/callback"
             }
           ],
-          "category": ["BROWSABLE", "DEFAULT"]
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
         }
       ]
     },
@@ -71,7 +76,9 @@
           "color": "#ffffff",
           "defaultChannel": "default"
         }
-      ]
+      ],
+      "react-native-iap",
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true

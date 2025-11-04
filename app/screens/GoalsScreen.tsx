@@ -10,11 +10,12 @@ import {
   Alert,
   ImageBackground,
 } from 'react-native';
-import { Plus, Target, Calendar, CheckCircle } from 'lucide-react-native';
+import { Plus, Target, Calendar, CheckCircle, Lock } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../providers/ThemeProvider';
 import { useAuth } from '../../providers/AuthProvider';
 import { useGoals } from '../../providers/GoalsProvider';
+import { useSubscription } from '../../providers/SubscriptionProvider';
 import { supabase } from '../../lib/supabase-client';
 import { router } from 'expo-router';
 import GoalModal from '../components/GoalModal';
@@ -22,6 +23,7 @@ import GoalEditModal from '../components/GoalEditModal';
 import GoalCreationChoiceModal from '../components/GoalCreationChoiceModal';
 import ManualGoalCreationModal from '../components/ManualGoalCreationModal';
 import TaskCreationModal from '../components/TaskCreationModal';
+import { shadowSm, insetTopLight, insetBottomDark, lighten } from '@/ui/depth';
 
 interface Goal {
   id?: string;
@@ -43,7 +45,8 @@ interface GoalWithProgress extends Goal {
 export default function GoalsScreen() {
   const { colors, isDark, isGalaxy } = useTheme();
   const { user } = useAuth();
-  const { updateGoal } = useGoals();
+  const { updateGoal, refreshTasks, isGoalLocked } = useGoals();
+  const { showUpgradeModal, isPremium } = useSubscription();
   const insets = useSafeAreaInsets();
   
   const [goals, setGoals] = useState<GoalWithProgress[]>([]);
@@ -85,15 +88,45 @@ export default function GoalsScreen() {
         
         // Add default color to goals if color field is not available
         if (data) {
+          // Defer to theme primary color as default; UI will still read colors.primary dynamically
           data = data.map(goal => ({
             ...goal,
-            color: goal.color || '#3B82F6'
+            color: goal.color || undefined
           }));
         }
       }
 
       if (error) {
         console.error('Error fetching goals:', error);
+        if ((error as any)?.code === '42501' || (error as any)?.message?.includes('JWT') || (error as any)?.message?.includes('permission denied') || (error as any)?.message?.includes('Unauthorized')) {
+          try {
+            await supabase.auth.refreshSession();
+            let retry = await supabase
+              .from('goal_progress')
+              .select('*')
+              .eq('user_id', user.id)
+              .eq('status', 'active')
+              .order('created_at', { ascending: false });
+            if (retry.error) {
+              // Fallback to goals table
+              const fb = await supabase
+                .from('goals')
+                .select('*')
+                .eq('user_id', user.id)
+                .eq('status', 'active')
+                .order('created_at', { ascending: false });
+              retry = fb as any;
+            }
+            if (retry.error) {
+              console.error('Retry error fetching goals:', retry.error);
+              return;
+            }
+            setGoals(retry.data || []);
+            return;
+          } catch (e) {
+            console.warn('Goal fetch retry after refresh failed:', e);
+          }
+        }
         return;
       }
 
@@ -163,8 +196,8 @@ export default function GoalsScreen() {
       .subscribe();
 
     return () => {
-      goalsSubscription.unsubscribe();
-      tasksSubscription.unsubscribe();
+      try { goalsSubscription.unsubscribe(); } catch {}
+      try { tasksSubscription.unsubscribe(); } catch {}
     };
   }, [user, fetchGoals]);
 
@@ -178,11 +211,18 @@ export default function GoalsScreen() {
     setShowGoalModal(true);
   };
 
-  const handleGoalCreated = (newGoal: any) => {
+  const handleGoalCreated = async (newGoal: any) => {
     console.log('Goal created:', newGoal);
-    // Refresh the goals list
+    // Refresh local list immediately
     fetchGoals();
-    // The GoalsProvider will automatically update via real-time listener
+    // Also refresh provider caches so Home and modals update live
+    try {
+      await refreshTasks();
+      const { refreshGoals } = useGoals();
+      await refreshGoals();
+    } catch (e) {
+      console.log('Post-create refresh warning:', e);
+    }
   };
 
   const handleCreateGoalPress = () => {
@@ -204,10 +244,16 @@ export default function GoalsScreen() {
     setShowTaskCreationModal(true);
   };
 
-  const handleTaskCreated = (task: any) => {
+  const handleTaskCreated = async (task: any) => {
     console.log('Task created:', task);
-    // Refresh goals to update task counts
-    fetchGoals();
+    // Refresh both tasks and goals to ensure homepage updates immediately
+    try {
+      await refreshTasks();
+      await fetchGoals();
+      console.log('Task creation: Successfully refreshed tasks and goals');
+    } catch (error) {
+      console.error('Error refreshing after task creation:', error);
+    }
   };
 
   const handleTaskToggle = async (taskId: string, completed: boolean) => {
@@ -272,11 +318,23 @@ export default function GoalsScreen() {
 
   const renderGoalCard = ({ item }: { item: GoalWithProgress }) => {
     const progressPercentage = Math.round((item.completion_ratio || 0) * 100);
+    const locked = !isPremium && isGoalLocked(item.id || item.goal_id);
     
     return (
       <TouchableOpacity
-        style={[styles.goalCard, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(255, 255, 255, 0.8)' }]}
-        onPress={() => handleGoalPress(item)}
+        style={[
+          styles.goalCard,
+          { backgroundColor: colors.card },
+          shadowSm(isDark),
+          locked && { opacity: 0.6 }
+        ]}
+        onPress={() => {
+          if (locked) {
+            showUpgradeModal('goal_limit');
+            return;
+          }
+          handleGoalPress(item);
+        }}
         activeOpacity={0.7}
       >
         <View style={styles.goalHeader}>
@@ -286,8 +344,8 @@ export default function GoalsScreen() {
               {item.title}
             </Text>
           </View>
-          <View style={[styles.statusBadge, { backgroundColor: item.color || colors.primary }]}>
-            <Text style={styles.statusText}>{progressPercentage}%</Text>
+          <View style={[styles.statusBadge, { backgroundColor: item.color || colors.primary }]}> 
+            <Text style={styles.statusText}>{locked ? 'Locked' : `${progressPercentage}%`}</Text>
           </View>
         </View>
 
@@ -298,7 +356,7 @@ export default function GoalsScreen() {
         )}
 
         <View style={styles.progressContainer}>
-          <View style={[styles.progressBar, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)' }]}>
+          <View style={[styles.progressBar, { backgroundColor: lighten(colors.card as any, isDark ? 0.04 : 0.1) }]}>
             <View
               style={[
                 styles.progressFill,
@@ -308,6 +366,8 @@ export default function GoalsScreen() {
                 }
               ]}
             />
+            <View pointerEvents="none" style={insetTopLight(colors as any, isDark, 0.08)} />
+            <View pointerEvents="none" style={insetBottomDark(colors as any, isDark, 0.08)} />
           </View>
           <Text style={[styles.progressText, { color: colors.textSecondary }]}>
             {progressPercentage}% complete
@@ -323,18 +383,26 @@ export default function GoalsScreen() {
           </View>
         )}
 
-        <View style={styles.goalActions}>
-          <TouchableOpacity
-            style={[styles.addTaskButton, { borderColor: colors.primary }]}
-            onPress={() => handleAddTask(item)}
-            activeOpacity={0.7}
-          >
-            <Plus size={16} color={colors.primary} />
-            <Text style={[styles.addTaskText, { color: colors.primary }]}>
-              Add Task
-            </Text>
-          </TouchableOpacity>
-        </View>
+        {!locked ? (
+          <View style={styles.goalActions}>
+            <TouchableOpacity
+              style={[styles.addTaskButton, { borderColor: colors.primary }]}
+              onPress={() => handleAddTask(item)}
+              activeOpacity={0.7}
+            >
+              <Plus size={16} color={colors.primary} />
+              <Text style={[styles.addTaskText, { color: colors.primary }]}> 
+                Add Task
+              </Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <View style={[StyleSheet.absoluteFillObject]}> 
+            <View style={{ position: 'absolute', top: 12, right: 12, backgroundColor: '#00000055', borderRadius: 12, padding: 6 }}>
+              <Lock size={16} color={'white'} />
+            </View>
+          </View>
+        )}
       </TouchableOpacity>
     );
   };

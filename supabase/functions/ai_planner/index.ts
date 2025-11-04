@@ -2,16 +2,20 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { GoogleGenerativeAI } from 'https://esm.sh/@google/generative-ai@0.21.0';
 // Initialize Gemini AI with environment variable
 const genAI = new GoogleGenerativeAI(Deno.env.get('EXPO_PUBLIC_GEMINI_API_KEY') || '');
-// Initialize the specialized planner model
-const plannerModel = genAI.getGenerativeModel({
-  model: "gemini-2.0-flash",
-  generationConfig: {
-    temperature: 0.3,
-    topP: 0.9,
-    topK: 50,
-    maxOutputTokens: 1024
-  },
-  systemInstruction: `You are an expert life coach and planner implementing a structured conversational state machine for goal planning across ANY domain.
+// Initialize planner models (prefer PRO, fallback to FLASH)
+let plannerModelPro: any | null = null;
+let plannerModelFlash: any | null = null;
+
+try {
+  plannerModelPro = genAI.getGenerativeModel({
+    model: "gemini-2.0-pro",
+    generationConfig: {
+      temperature: 0.3,
+      topP: 0.9,
+      topK: 50,
+      maxOutputTokens: 1024
+    },
+    systemInstruction: `You are an expert life coach and planner implementing a structured conversational state machine for goal planning across ANY domain.
 
 CONVERSATIONAL STATE MACHINE:
 You must follow this exact sequence to collect mandatory inputs (S0-S5), then dynamically tailor the plan (S6), and finally generate the schedule (S7).
@@ -41,7 +45,56 @@ CRITICAL RULES:
 - Be flexible and adaptable to ANY goal domain
 
 CRITICAL: You MUST return ONLY valid JSON. No other text, no explanations, no markdown. Just pure JSON.`
-});
+  });
+  console.log('[ai_planner] ✅ Initialized Gemini PRO planner model');
+} catch (err) {
+  console.warn('[ai_planner] ❌ Failed to initialize Gemini PRO planner model', err);
+}
+
+try {
+  plannerModelFlash = genAI.getGenerativeModel({
+    model: "gemini-2.0-flash",
+    generationConfig: {
+      temperature: 0.3,
+      topP: 0.9,
+      topK: 50,
+      maxOutputTokens: 1024
+    },
+    systemInstruction: `You are an expert life coach and planner implementing a structured conversational state machine for goal planning across ANY domain.
+
+CONVERSATIONAL STATE MACHINE:
+You must follow this exact sequence to collect mandatory inputs (S0-S5), then dynamically tailor the plan (S6), and finally generate the schedule (S7).
+
+MANDATORY STATES (S0-S5) - UNIVERSAL FOR ALL GOAL TYPES:
+S0: GOAL_INPUT - Ask about their specific goal
+S1: DATE_INPUT - Ask about their target date
+S2: DAYS_INPUT - Ask about which days they want to work on this
+S3: DURATION_INPUT - Ask about time per session
+S4: TIME_INPUT - Ask about preferred time of day
+S5: STARTING_POINT - Ask about their current level/starting point
+
+DYNAMIC TAILORING (S6) - ADAPT TO GOAL TYPE:
+After S5, ask 3-5 additional questions tailored to the specific goal type and context.
+
+GENERATE SCHEDULE (S7):
+Only after collecting S0-S5 mandatory inputs AND sufficient S6 dynamic data, generate the complete plan.
+
+CRITICAL RULES:
+- Follow the state machine sequence exactly
+- Never skip mandatory states S0-S5
+- Generate natural, conversational questions tailored to the specific goal
+- Use vocabulary and terminology appropriate to the goal domain
+- Track progress in planner_state.facts
+- Only generate plan after S7 state
+- Return only valid JSON
+- Be flexible and adaptable to ANY goal domain
+
+CRITICAL: You MUST return ONLY valid JSON. No other text, no explanations, no markdown. Just pure JSON.`
+  });
+  console.log('[ai_planner] ✅ Initialized Gemini FLASH planner model');
+} catch (err) {
+  console.warn('[ai_planner] ❌ Failed to initialize Gemini FLASH planner model', err);
+}
 // State machine definitions
 const STATES = {
   S0_GOAL_INPUT: 'S0_GOAL_INPUT',
@@ -515,9 +568,22 @@ Rules:
 
 Return ONLY JSON:
 { "status": "ask", "question": "...", "missing_fields": ["${currentState}"], "priority": "high", "planner_state": { "facts": {}, "missing_fields": ["${currentState}"], "version": 1 }, "rationale": "why" }`;
-    const result = await plannerModel.generateContent(questionPrompt);
-    const response = await result.response;
-    const text = response.text();
+    // Prefer PRO for question generation, fallback to FLASH
+    let text: string;
+    try {
+      const resultPro = await (plannerModelPro || plannerModelFlash).generateContent(questionPrompt);
+      const responsePro = await resultPro.response;
+      text = responsePro.text();
+    } catch (primaryErr) {
+      console.warn('[ai_planner] ⚠️ Primary model failed for S0–S6 question generation. Attempting fallback...', primaryErr);
+      if (plannerModelPro && plannerModelFlash) {
+        const resultFlash = await plannerModelFlash.generateContent(questionPrompt);
+        const responseFlash = await resultFlash.response;
+        text = responseFlash.text();
+      } else {
+        throw primaryErr;
+      }
+    }
     const jsonText = extractJSONFromResponse(text);
     const plannerResponse = JSON.parse(jsonText);
     // Update facts from last user message

@@ -25,12 +25,20 @@ interface User {
   subscriptionTier?: 'free' | 'premium' | 'family';
   subscriptionStatus?: 'active' | 'expired' | 'cancelled' | 'trialing';
   trialEndsAt?: string;
+  // Optional demographics/biometrics for personalization
+  age?: number | null;
+  gender?: string | null;
+  heightCm?: number | null;
+  weightKg?: number | null;
+  dateOfBirth?: string | null; // YYYY-MM-DD
+  unitSystem?: 'imperial' | 'metric';
 }
 
 interface UserContextType {
   user: User | null;
   loading: boolean;
   isValidatingSession: boolean;
+  hydrated: boolean;
   updateUser: (updates: Partial<User>) => Promise<void>;
   refreshUser: () => Promise<void>;
 }
@@ -53,10 +61,14 @@ export const [UserProvider, useUser] = createContextHook<UserContextType>(() => 
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [isValidatingSession, setIsValidatingSession] = useState(false);
+  const [hydrated, setHydrated] = useState(false);
   const hasShownTimeWarning = useRef(false);
   const lastWarningTime = useRef(0);
   const isValidatingRef = useRef(false);
+  const validationTimeoutRef = useRef(null as any);
+  const VALIDATION_TIMEOUT_MS = 12000;
   const { user: authUser } = useAuth();
+  const isBackgroundRefreshingRef = useRef(false);
 
   useEffect(() => {
     if (authUser) {
@@ -64,21 +76,67 @@ export const [UserProvider, useUser] = createContextHook<UserContextType>(() => 
       if (!isValidatingRef.current) {
         isValidatingRef.current = true;
         setIsValidatingSession(true);
+        if (validationTimeoutRef.current) {
+          clearTimeout(validationTimeoutRef.current);
+        }
+        validationTimeoutRef.current = setTimeout(() => {
+          console.warn('UserProvider: session validation watchdog timeout; resetting state.');
+          isValidatingRef.current = false;
+          setIsValidatingSession(false);
+          setLoading(false);
+        }, VALIDATION_TIMEOUT_MS);
+
         loadUserProfile().finally(() => {
           isValidatingRef.current = false;
           setIsValidatingSession(false);
+          setLoading(false);
+          if (validationTimeoutRef.current) {
+            clearTimeout(validationTimeoutRef.current);
+            validationTimeoutRef.current = null;
+          }
         });
       }
     } else {
       setUser(null);
       setLoading(false);
       setIsValidatingSession(false);
+      setHydrated(false);
       // Reset warning flag when user logs out
       hasShownTimeWarning.current = false;
       lastWarningTime.current = 0;
       isValidatingRef.current = false;
+      if (validationTimeoutRef.current) {
+        clearTimeout(validationTimeoutRef.current);
+        validationTimeoutRef.current = null;
+      }
     }
   }, [authUser]);
+
+  // Failsafe to prevent infinite loading if validation gets stuck
+  useEffect(() => {
+    if (isValidatingSession) {
+      if (validationTimeoutRef.current) {
+        clearTimeout(validationTimeoutRef.current);
+      }
+      validationTimeoutRef.current = setTimeout(() => {
+        console.warn('UserProvider: validation stuck; auto-resetting loading state.');
+        isValidatingRef.current = false;
+        setIsValidatingSession(false);
+        setLoading(false);
+      }, VALIDATION_TIMEOUT_MS);
+      return () => {
+        if (validationTimeoutRef.current) {
+          clearTimeout(validationTimeoutRef.current);
+          validationTimeoutRef.current = null;
+        }
+      };
+    } else {
+      if (validationTimeoutRef.current) {
+        clearTimeout(validationTimeoutRef.current);
+        validationTimeoutRef.current = null;
+      }
+    }
+  }, [isValidatingSession]);
 
   // Helper function to show time warning alert (only once)
   const showTimeWarningAlert = useCallback(() => {
@@ -102,35 +160,36 @@ export const [UserProvider, useUser] = createContextHook<UserContextType>(() => 
   useEffect(() => {
     const handleAppStateChange = async (nextAppState: any) => {
       if (nextAppState === 'active' && authUser) {
-        console.log('App became active - checking session validity...');
-        
-        // Refresh session to handle potential time changes
+        console.log('UserProvider: App became active - refreshing session (non-blocking)...');
+
         try {
+          // Avoid overlapping validations on resume
+          if (isValidatingRef.current || isValidatingSession) {
+            return;
+          }
+          // Guard: only refresh if a refresh token exists
+          const { data: { session: currentSession } } = await supabase.auth.getSession();
+          const hasRefreshToken = !!(currentSession as any)?.refresh_token;
+          if (!hasRefreshToken) {
+            console.log('UserProvider: No refresh token on resume; skipping refresh.');
+            return;
+          }
+
           const { data: { session }, error } = await supabase.auth.refreshSession();
-          
           if (error) {
-            console.warn('Session refresh failed on app resume:', error);
-            
-            // If session is completely missing/invalid, sign out
-            if (error?.message?.includes('Auth session missing') || 
-                error?.message?.includes('refresh_token') ||
-                error?.name === 'AuthSessionMissingError') {
-              console.log('Session is invalid on app resume - signing out...');
-              
-              showTimeWarningAlert();
-              
-              await supabase.auth.signOut();
-              setUser(null);
-              return;
-            }
-            // Otherwise, let the user continue (they'll see login if needed)
-          } else if (session) {
-            console.log('Session refreshed successfully on app resume');
-            // Reload user profile to ensure data is fresh
-            await loadUserProfile();
+            // Non-destructive: do not sign out on transient refresh errors
+            console.warn('Session refresh failed on resume (ignored):', error?.message || error);
+            return;
+          }
+          if (session) {
+            console.log('UserProvider: Session refreshed on resume, starting background user refresh');
+            // Perform a non-blocking user/profile refresh so UI is not gated
+            backgroundRefreshUser().catch((e) => {
+              console.warn('UserProvider: background refresh failed:', e);
+            });
           }
         } catch (error) {
-          console.error('Error refreshing session on app resume:', error);
+          console.warn('Error refreshing session on resume (ignored):', error);
         }
       }
     };
@@ -141,7 +200,7 @@ export const [UserProvider, useUser] = createContextHook<UserContextType>(() => 
     return () => {
       subscription?.remove();
     };
-  }, [authUser]);
+  }, [authUser, isValidatingSession]);
 
   const loadUserProfile = async () => {
     if (!authUser) {
@@ -160,8 +219,20 @@ export const [UserProvider, useUser] = createContextHook<UserContextType>(() => 
       const { data: { session: currentSession }, error: sessionCheckError } = await supabase.auth.getSession();
       
       if (sessionCheckError || !currentSession) {
-        console.log('⚠️ Session check failed - attempting refresh...');
+        console.log('⚠️ Session check failed - evaluating refresh eligibility...');
         
+        // If there's no refresh token available, skip refresh to avoid noisy errors
+        const hasRefreshToken = !!(currentSession as any)?.refresh_token;
+        if (!hasRefreshToken) {
+          console.log('❌ No refresh token available - signing out...');
+          showTimeWarningAlert();
+          await supabase.auth.signOut();
+          setUser(null);
+          setLoading(false);
+          setIsValidatingSession(false);
+          return;
+        }
+
         const { data: { session: refreshedSession }, error: refreshError } = await supabase.auth.refreshSession();
         
         if (refreshError || !refreshedSession) {
@@ -206,7 +277,19 @@ export const [UserProvider, useUser] = createContextHook<UserContextType>(() => 
         if (error.code === '42501' || error.message?.includes('JWT')) {
           console.log('Authentication error detected - attempting to refresh session...');
           
-          // Try to refresh the session
+          // Try to refresh the session only if we have a refresh token
+          const { data: { session: currentSession2 } } = await supabase.auth.getSession();
+          const hasRefreshToken2 = !!(currentSession2 as any)?.refresh_token;
+          if (!hasRefreshToken2) {
+            console.log('No refresh token available during profile fetch; signing out.');
+            showTimeWarningAlert();
+            await supabase.auth.signOut();
+            setUser(null);
+            setLoading(false);
+            setIsValidatingSession(false);
+            return;
+          }
+
           const { data: { session }, error: refreshError } = await supabase.auth.refreshSession();
           
           if (refreshError || !session) {
@@ -290,6 +373,67 @@ export const [UserProvider, useUser] = createContextHook<UserContextType>(() => 
         return;
       }
 
+      // If user just verified and we have preauth onboarding data, apply it BEFORE building user data
+      let effectiveProfile = profile;
+      try {
+        const preauthRaw = await AsyncStorage.getItem('preauth_onboarding_profile');
+        if (preauthRaw) {
+          const raw = await AsyncStorage.getItem('preauth_onboarding_profile');
+          if (raw) {
+            const pending = JSON.parse(raw);
+            const base: any = {
+              onboarding_completed: true,
+              updated_at: new Date().toISOString(),
+            };
+            if (pending.full_name) base.full_name = pending.full_name;
+            if (pending.username) base.username = pending.username;
+
+            // Upsert base fields (id/email required for insert)
+            const { error: upsertErr } = await supabase
+              .from('user_profiles')
+              .upsert({ id: authUser.id, email: authUser.email, ...base }, { onConflict: 'id' });
+            if (upsertErr) {
+              console.warn('Preauth upsert failed:', upsertErr);
+            }
+
+            // Optional fields best-effort; ignore unknown column errors
+            const optionalKeys: Array<[string, any]> = [
+              ['date_of_birth', pending.date_of_birth],
+              ['age', pending.age],
+              ['gender', pending.gender],
+              ['height_cm', pending.height_cm],
+              ['weight_kg', pending.weight_kg],
+              ['unit_system', pending.unit_system],
+            ];
+            for (const [key, value] of optionalKeys) {
+              if (value === undefined || value === null || value === '') continue;
+              const { error: optErr } = await supabase
+                .from('user_profiles')
+                .update({ [key]: value } as any)
+                .eq('id', authUser.id);
+              if (optErr) {
+                console.warn('Preauth optional update failed:', key, optErr);
+              }
+            }
+
+            // Re-fetch profile so UI reflects latest values immediately
+            const { data: refreshed, error: refetchErr } = await supabase
+              .from('user_profiles')
+              .select('*')
+              .eq('id', authUser.id)
+              .single();
+            if (!refetchErr && refreshed) {
+              effectiveProfile = refreshed;
+            }
+
+            // Clear temp preauth data after use to avoid re-applying
+            await AsyncStorage.removeItem('preauth_onboarding_profile');
+          }
+        }
+      } catch (e) {
+        console.warn('Failed to apply preauth onboarding profile:', e);
+      }
+
       // Validate and update streak (checks for missed days and updates for today)
       console.log('🔥 Validating day streak...');
       await validateDayStreak(authUser.id);
@@ -303,12 +447,54 @@ export const [UserProvider, useUser] = createContextHook<UserContextType>(() => 
         .eq('user_id', authUser.id)
         .in('status', ['active', 'in_progress']);
 
-      // Convert database profile to our User interface
+      // If user just verified and we have preauth onboarding data, apply it once
+      try {
+        const preauthFlag = await AsyncStorage.getItem('preauth_onboarding_done');
+        if (preauthFlag === 'true') {
+          const raw = await AsyncStorage.getItem('preauth_onboarding_profile');
+          if (raw) {
+            const pending = JSON.parse(raw);
+            const base: any = {
+              onboarding_completed: true,
+              updated_at: new Date().toISOString(),
+            };
+            if (pending.full_name) base.full_name = pending.full_name;
+            if (pending.username) base.username = pending.username;
+            await supabase.from('user_profiles').upsert({ id: authUser.id, email: authUser.email, ...base }, { onConflict: 'id' });
+            const optionalKeys: Array<[string, any]> = [
+              ['date_of_birth', pending.date_of_birth],
+              ['age', pending.age],
+              ['gender', pending.gender],
+              ['height_cm', pending.height_cm],
+              ['weight_kg', pending.weight_kg],
+              ['unit_system', pending.unit_system],
+            ];
+            for (const [key, value] of optionalKeys) {
+              if (value === undefined || value === null || value === '') continue;
+              await supabase.from('user_profiles').update({ [key]: value } as any).eq('id', authUser.id);
+            }
+            await AsyncStorage.removeItem('preauth_onboarding_profile');
+            await AsyncStorage.removeItem('preauth_onboarding_done');
+          }
+        }
+      } catch (e) {
+        console.warn('Failed to apply preauth onboarding profile:', e);
+      }
+
+      // Determine effective premium considering trial/expiry timestamps
+      const trialActive = !!effectiveProfile.trial_ends_at && !isNaN(Date.parse(effectiveProfile.trial_ends_at))
+        ? Date.parse(effectiveProfile.trial_ends_at) > Date.now()
+        : false;
+      const paidActive = !!effectiveProfile.subscription_expires_at
+        ? (!isNaN(Date.parse(effectiveProfile.subscription_expires_at)) && Date.parse(effectiveProfile.subscription_expires_at) > Date.now())
+        : true; // treat null as non-expiring active
+
+      // Convert database profile to our User interface (use effectiveProfile which includes preauth updates)
       const userData: User = {
-        id: profile.id,
-        name: profile.full_name || '',
-        username: profile.username || undefined,
-        email: profile.email || authUser.email || '',
+        id: effectiveProfile.id,
+        name: effectiveProfile.full_name || '',
+        username: effectiveProfile.username || undefined,
+        email: effectiveProfile.email || authUser.email || '',
         dayStreak: currentStreak,
         activeGoals: activeGoalsCount || 0,
         settings: {
@@ -316,14 +502,24 @@ export const [UserProvider, useUser] = createContextHook<UserContextType>(() => 
           weeklyReports: true,
           achievementBadges: true,
         },
-        onboardingCompleted: profile.onboarding_completed || false,
-        isPremium: profile.is_premium || profile.subscription_tier === 'premium' || false,
-        subscriptionTier: profile.subscription_tier || 'free',
-        subscriptionStatus: profile.subscription_status || 'expired',
-        trialEndsAt: profile.trial_ends_at || undefined,
+        onboardingCompleted: effectiveProfile.onboarding_completed || false,
+        isPremium: (
+          (effectiveProfile.subscription_tier === 'premium' || effectiveProfile.subscription_tier === 'family') &&
+          ((effectiveProfile.subscription_status === 'active' && paidActive) || (effectiveProfile.subscription_status === 'trialing' && trialActive))
+        ) || false,
+        subscriptionTier: effectiveProfile.subscription_tier || 'free',
+        subscriptionStatus: effectiveProfile.subscription_status || 'expired',
+        trialEndsAt: effectiveProfile.trial_ends_at || undefined,
+        age: effectiveProfile.age ?? null,
+        gender: effectiveProfile.gender ?? null,
+        heightCm: effectiveProfile.height_cm ?? null,
+        weightKg: effectiveProfile.weight_kg ?? null,
+        dateOfBirth: effectiveProfile.date_of_birth ?? null,
+        unitSystem: effectiveProfile.unit_system || 'metric',
       };
 
       setUser(userData);
+      setHydrated(true);
       console.log('✅ User profile loaded successfully');
     } catch (error) {
       console.error('❌ Error loading user profile:', error);
@@ -333,6 +529,74 @@ export const [UserProvider, useUser] = createContextHook<UserContextType>(() => 
       setIsValidatingSession(false);
     }
   };
+
+  // Non-blocking, lightweight refresh used on app resume. Never toggles loading/isValidatingSession.
+  const backgroundRefreshUser = useCallback(async () => {
+    if (!authUser) return;
+    if (isBackgroundRefreshingRef.current) return;
+    isBackgroundRefreshingRef.current = true;
+    try {
+      console.log('UserProvider: backgroundRefreshUser started');
+      const { data: { session: currentSession }, error: sessionCheckError } = await supabase.auth.getSession();
+      if (sessionCheckError || !currentSession) {
+        console.log('UserProvider: background refresh - no valid session, skipping');
+        return;
+      }
+
+      // Fetch profile only; skip preauth updates and heavy streak logic for speed
+      const { data: profile, error } = await supabase
+        .from('user_profiles')
+        .select('*')
+        .eq('id', authUser.id)
+        .single();
+      if (error) {
+        console.warn('UserProvider: background refresh profile error (ignored):', error?.message || error);
+        return;
+      }
+
+      const trialActive2 = !!profile.trial_ends_at && !isNaN(Date.parse(profile.trial_ends_at))
+        ? Date.parse(profile.trial_ends_at) > Date.now()
+        : false;
+      const paidActive2 = !!(profile as any).subscription_expires_at
+        ? (!isNaN(Date.parse((profile as any).subscription_expires_at)) && Date.parse((profile as any).subscription_expires_at) > Date.now())
+        : true;
+
+      const userData: any = {
+        id: profile.id,
+        name: profile.full_name || '',
+        username: profile.username || undefined,
+        email: profile.email || authUser.email || '',
+        // Preserve existing quick stats if available to avoid flicker
+        dayStreak: (typeof (profile as any).day_streak === 'number') ? (profile as any).day_streak : (user?.dayStreak ?? 0),
+        activeGoals: user?.activeGoals ?? 0,
+        settings: {
+          goalReminders: true,
+          weeklyReports: true,
+          achievementBadges: true,
+        },
+        onboardingCompleted: profile.onboarding_completed || false,
+        isPremium: (
+          (profile.subscription_tier === 'premium' || profile.subscription_tier === 'family') &&
+          ((profile.subscription_status === 'active' && paidActive2) || (profile.subscription_status === 'trialing' && trialActive2))
+        ) || false,
+        subscriptionTier: profile.subscription_tier || 'free',
+        subscriptionStatus: profile.subscription_status || 'expired',
+        trialEndsAt: profile.trial_ends_at || undefined,
+        age: profile.age ?? null,
+        gender: profile.gender ?? null,
+        heightCm: profile.height_cm ?? null,
+        weightKg: profile.weight_kg ?? null,
+        dateOfBirth: profile.date_of_birth ?? null,
+        unitSystem: profile.unit_system || 'metric',
+      };
+
+      setUser(prev => ({ ...(prev || {} as any), ...userData }));
+      setHydrated(true);
+      console.log('UserProvider: backgroundRefreshUser finished');
+    } finally {
+      isBackgroundRefreshingRef.current = false;
+    }
+  }, [authUser, user]);
 
   const createUserProfile = async () => {
     if (!authUser) return;
@@ -359,7 +623,17 @@ export const [UserProvider, useUser] = createContextHook<UserContextType>(() => 
         if (error.code === '42501') {
           console.log('RLS policy violation detected - attempting to refresh session...');
           
-          // Try to refresh the session
+          // Try to refresh the session only if we have a refresh token
+          const { data: { session: currentSession3 } } = await supabase.auth.getSession();
+          const hasRefreshToken3 = !!(currentSession3 as any)?.refresh_token;
+          if (!hasRefreshToken3) {
+            console.log('No refresh token available during profile creation; signing out.');
+            showTimeWarningAlert();
+            await supabase.auth.signOut();
+            setUser(null);
+            return;
+          }
+
           const { data: { session }, error: refreshError } = await supabase.auth.refreshSession();
           
           if (refreshError || !session) {
@@ -428,6 +702,12 @@ export const [UserProvider, useUser] = createContextHook<UserContextType>(() => 
       if (updates.name !== undefined) dbUpdates.full_name = updates.name;
       if (updates.username !== undefined) dbUpdates.username = updates.username;
       if (updates.onboardingCompleted !== undefined) dbUpdates.onboarding_completed = updates.onboardingCompleted;
+      if (updates.age !== undefined) dbUpdates.age = updates.age;
+      if (updates.gender !== undefined) dbUpdates.gender = updates.gender;
+      if (updates.heightCm !== undefined) dbUpdates.height_cm = updates.heightCm;
+      if (updates.weightKg !== undefined) dbUpdates.weight_kg = updates.weightKg;
+      if (updates.dateOfBirth !== undefined) dbUpdates.date_of_birth = updates.dateOfBirth;
+      if (updates.unitSystem !== undefined) dbUpdates.unit_system = updates.unitSystem;
       dbUpdates.updated_at = new Date().toISOString();
 
       const { error } = await supabase
@@ -453,14 +733,37 @@ export const [UserProvider, useUser] = createContextHook<UserContextType>(() => 
   }, [user, authUser]);
 
   const refreshUser = useCallback(async () => {
-    await loadUserProfile();
-  }, [authUser]);
+    if (isValidatingRef.current || isValidatingSession) return;
+    isValidatingRef.current = true;
+    setIsValidatingSession(true);
+    if (validationTimeoutRef.current) {
+      clearTimeout(validationTimeoutRef.current);
+    }
+    validationTimeoutRef.current = setTimeout(() => {
+      console.warn('UserProvider: refreshUser validation watchdog timeout; resetting state.');
+      isValidatingRef.current = false;
+      setIsValidatingSession(false);
+      setLoading(false);
+    }, VALIDATION_TIMEOUT_MS);
+    try {
+      await loadUserProfile();
+    } finally {
+      isValidatingRef.current = false;
+      setIsValidatingSession(false);
+      setLoading(false);
+      if (validationTimeoutRef.current) {
+        clearTimeout(validationTimeoutRef.current);
+        validationTimeoutRef.current = null;
+      }
+    }
+  }, [authUser, isValidatingSession]);
 
   return useMemo(() => ({
     user,
     loading: loading || isValidatingSession, // Keep loading true during session validation
     isValidatingSession,
+    hydrated,
     updateUser,
     refreshUser,
-  }), [user, loading, isValidatingSession, updateUser, refreshUser]);
+  }), [user, loading, isValidatingSession, hydrated, updateUser, refreshUser]);
 });

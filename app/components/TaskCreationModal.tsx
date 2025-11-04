@@ -19,6 +19,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../providers/ThemeProvider';
 import { useAuth } from '../../providers/AuthProvider';
 import { supabase } from '../../lib/supabase-client';
+import { shadowSm } from '@/ui/depth';
 
 interface TaskCreationModalProps {
   visible: boolean;
@@ -41,7 +42,14 @@ export default function TaskCreationModal({
   
   const [title, setTitle] = useState('');
   const [notes, setNotes] = useState('');
-  const [dueDate, setDueDate] = useState('');
+  const [dueDate, setDueDate] = useState(() => {
+    // Initialize with today's date
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const day = String(today.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  });
   const [dueTime, setDueTime] = useState('09:00');
   const [durationMinutes, setDurationMinutes] = useState('');
   const [loading, setLoading] = useState(false);
@@ -51,7 +59,12 @@ export default function TaskCreationModal({
   const resetForm = () => {
     setTitle('');
     setNotes('');
-    setDueDate('');
+    // Set default date to today
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const day = String(today.getDate()).padStart(2, '0');
+    setDueDate(`${year}-${month}-${day}`);
     setDueTime('09:00');
     setDurationMinutes('');
     setShowDatePicker(false);
@@ -61,6 +74,7 @@ export default function TaskCreationModal({
   // Reset form when modal opens
   useEffect(() => {
     if (visible) {
+      console.log('TaskCreationModal opened, resetting form');
       resetForm();
     }
   }, [visible]);
@@ -85,8 +99,8 @@ export default function TaskCreationModal({
 
     setLoading(true);
     try {
-      // Combine date and time
-      const combinedDateTime = `${dueDate}T${dueTime}:00.000Z`;
+      // Combine date and time - use local timezone to avoid date shifting
+      const combinedDateTime = `${dueDate}T${dueTime}:00`;
       const dueAt = new Date(combinedDateTime).toISOString();
 
       const taskData = {
@@ -112,6 +126,7 @@ export default function TaskCreationModal({
       }
 
       console.log('Task created:', task);
+      console.log('Final due date saved:', dueAt);
       onTaskCreated(task);
       onClose();
       resetForm();
@@ -135,7 +150,9 @@ export default function TaskCreationModal({
       const year = selectedDate.getFullYear();
       const month = String(selectedDate.getMonth() + 1).padStart(2, '0');
       const day = String(selectedDate.getDate()).padStart(2, '0');
-      setDueDate(`${year}-${month}-${day}`);
+      const dateString = `${year}-${month}-${day}`;
+      console.log('Date selected:', dateString);
+      setDueDate(dateString);
     }
   };
 
@@ -180,7 +197,7 @@ export default function TaskCreationModal({
           />
         )}
         {/* Header */}
-        <View style={[styles.header, { borderBottomColor: colors.border }]}>
+        <View style={[styles.header, { borderBottomColor: colors.border, borderBottomWidth: 0 }]}>
           <View style={styles.headerContent}>
             <Plus size={24} color={colors.primary} />
             <View style={styles.headerText}>
@@ -202,13 +219,12 @@ export default function TaskCreationModal({
           <View style={styles.section}>
             <Text style={[styles.label, { color: colors.text }]}>Title *</Text>
             <TextInput
-              style={[styles.input, { 
-                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(255, 255, 255, 0.8)', 
-                color: colors.text,
-                borderColor: colors.border 
-              }]}
+              style={[styles.input, { backgroundColor: colors.card, color: colors.text, borderColor: 'transparent' }, shadowSm(isDark)]}
               value={title}
-              onChangeText={setTitle}
+              onChangeText={(text) => {
+                console.log('Title changed:', text);
+                setTitle(text);
+              }}
               placeholder="Enter task title"
               placeholderTextColor={colors.textSecondary}
               maxLength={100}
@@ -219,11 +235,7 @@ export default function TaskCreationModal({
           <View style={styles.section}>
             <Text style={[styles.label, { color: colors.text }]}>Notes</Text>
             <TextInput
-              style={[styles.textArea, { 
-                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(255, 255, 255, 0.8)', 
-                color: colors.text,
-                borderColor: colors.border 
-              }]}
+              style={[styles.textArea, { backgroundColor: colors.card, color: colors.text, borderColor: 'transparent' }, shadowSm(isDark)]}
               value={notes}
               onChangeText={setNotes}
               placeholder="Enter task details or instructions"
@@ -238,7 +250,7 @@ export default function TaskCreationModal({
           <View style={styles.section}>
             <Text style={[styles.label, { color: colors.text }]}>Due Date *</Text>
             <TouchableOpacity
-              style={[styles.dateInputContainer, { borderColor: colors.border }]}
+              style={[styles.dateInputContainer, { backgroundColor: colors.card, borderColor: 'transparent' }, shadowSm(isDark)]}
               onPress={() => setShowDatePicker(true)}
             >
               <Calendar size={20} color={colors.textSecondary} />
@@ -248,7 +260,7 @@ export default function TaskCreationModal({
             </TouchableOpacity>
             {showDatePicker && (
               <DateTimePicker
-                value={dueDate ? new Date(dueDate) : new Date()}
+                value={dueDate ? new Date(dueDate + 'T12:00:00') : new Date()}
                 mode="date"
                 display={Platform.OS === 'ios' ? 'spinner' : 'default'}
                 onChange={handleDateChange}
@@ -260,7 +272,7 @@ export default function TaskCreationModal({
           <View style={styles.section}>
             <Text style={[styles.label, { color: colors.text }]}>Due Time</Text>
             <TouchableOpacity
-              style={[styles.timeInputContainer, { borderColor: colors.border }]}
+              style={[styles.timeInputContainer, { backgroundColor: colors.card, borderColor: 'transparent' }, shadowSm(isDark)]}
               onPress={() => setShowTimePicker(true)}
             >
               <Clock size={20} color={colors.textSecondary} />
@@ -283,11 +295,7 @@ export default function TaskCreationModal({
           <View style={styles.section}>
             <Text style={[styles.label, { color: colors.text }]}>Duration (minutes)</Text>
             <TextInput
-              style={[styles.input, { 
-                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(255, 255, 255, 0.8)', 
-                color: colors.text,
-                borderColor: colors.border 
-              }]}
+              style={[styles.input, { backgroundColor: colors.card, color: colors.text, borderColor: 'transparent' }, shadowSm(isDark)]}
               value={durationMinutes}
               onChangeText={setDurationMinutes}
               placeholder="e.g., 60"
@@ -298,6 +306,7 @@ export default function TaskCreationModal({
               Leave empty for no specific duration
             </Text>
           </View>
+
         </ScrollView>
 
         {/* Footer */}
@@ -312,9 +321,20 @@ export default function TaskCreationModal({
             </Text>
           </TouchableOpacity>
           <TouchableOpacity 
-            style={[styles.saveButton, { backgroundColor: colors.primary }]}
+            style={[
+              styles.saveButton, 
+              { 
+                backgroundColor: (loading || !title.trim() || !dueDate) ? colors.textSecondary : colors.primary,
+                opacity: (loading || !title.trim() || !dueDate) ? 0.5 : 1
+              }
+            ]}
             onPress={() => {
-              console.log('Save button pressed, disabled state:', { loading, title: title.trim(), dueDate });
+              console.log('Save button pressed, disabled state:', { 
+                loading, 
+                title: title.trim(), 
+                dueDate,
+                disabled: loading || !title.trim() || !dueDate 
+              });
               handleSave();
             }}
             disabled={loading || !title.trim() || !dueDate}
@@ -347,7 +367,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 20,
     paddingBottom: 15,
-    borderBottomWidth: 1,
+    borderBottomWidth: 0,
   },
   headerContent: {
     flexDirection: 'row',
@@ -382,14 +402,14 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   input: {
-    borderWidth: 1,
+    borderWidth: 0,
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 12,
     fontSize: 16,
   },
   textArea: {
-    borderWidth: 1,
+    borderWidth: 0,
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 12,
@@ -400,7 +420,7 @@ const styles = StyleSheet.create({
   dateInputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderWidth: 1,
+    borderWidth: 0,
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 12,
@@ -414,7 +434,7 @@ const styles = StyleSheet.create({
   timeInputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderWidth: 1,
+    borderWidth: 0,
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 12,

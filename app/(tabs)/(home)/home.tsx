@@ -21,6 +21,7 @@ import { useUser } from "@/providers/UserProvider";
 import { useGoals } from "@/providers/GoalsProvider";
 import TaskDetailModal from "@/app/components/TaskDetailModal";
 import ViewAllTasksModal from "@/app/components/ViewAllTasksModal";
+import { shadowSm } from "@/ui/depth";
 
 
 
@@ -117,11 +118,20 @@ export default function HomeScreen() {
   };
 
   // Compute tasks - these will re-compute when tasks or goals change
-  const todaysTasksFromGoals = useMemo(() => getTodaysTasksFromGoals(), [goals]);
-  const todaysDatabaseTasks = useMemo(() => getTodaysDatabaseTasks(), [tasks, goals]);
+  const todaysTasksFromGoals = useMemo(() => {
+    const result = getTodaysTasksFromGoals();
+    console.log('Homepage: todaysTasksFromGoals updated:', result.length);
+    return result;
+  }, [goals]);
+  const todaysDatabaseTasks = useMemo(() => {
+    const result = getTodaysDatabaseTasks();
+    console.log('Homepage: todaysDatabaseTasks updated:', result.length, 'from', tasks.length, 'total tasks');
+    return result;
+  }, [tasks, goals]);
   
   // Combine both goal-generated tasks and database tasks
   const allTodaysTasks = [...todaysTasksFromGoals, ...todaysDatabaseTasks];
+  console.log('Homepage: allTodaysTasks total:', allTodaysTasks.length);
   
   const [animatedValues, setAnimatedValues] = useState<Animated.Value[]>([]);
   const [selectedTask, setSelectedTask] = useState<any>(null);
@@ -246,8 +256,10 @@ export default function HomeScreen() {
   const totalGoalTasks = allTodaysTasks.length;
   const goalProgressPercentage = totalGoalTasks > 0 ? Math.round((completedGoalTasks / totalGoalTasks) * 100) : 0;
 
+  const tasksValue = totalGoalTasks === 0 ? '—' : `${completedGoalTasks}/${totalGoalTasks}`;
+  const tasksLabel = totalGoalTasks === 0 ? "No tasks today" : "Tasks Complete";
   const progressCards = [
-    { label: "Tasks Complete", value: `${completedGoalTasks}/${totalGoalTasks}`, color: colors.primary },
+    { label: tasksLabel, value: tasksValue, color: colors.primary },
     { label: "Day Streak", value: user.dayStreak.toString(), color: colors.success },
     { label: "Today's Progress", value: `${goalProgressPercentage}%`, color: colors.warning },
     { label: "Goals Active", value: goals.filter(g => g.status === 'active').length.toString(), color: colors.info },
@@ -255,6 +267,10 @@ export default function HomeScreen() {
 
   const { width } = Dimensions.get('window');
   const scrollY = useRef(new Animated.Value(0)).current;
+  const isIpad = Platform.OS === 'ios' && (Platform as any).isPad === true;
+  const headerHeight = isIpad ? 340 : 280;
+  const headerPaddingBottom = isIpad ? 110 : 90;
+  const progressTopMargin = 16;
   
   const headerOpacity = scrollY.interpolate({
     inputRange: [0, 100],
@@ -290,7 +306,7 @@ export default function HomeScreen() {
   const styles = StyleSheet.create({
     container: {
       flex: 1,
-      backgroundColor: isDark ? '#0a0a1a' : '#f8fafc',
+      backgroundColor: colors.background,
     },
     patternLine: {
       position: 'absolute',
@@ -363,7 +379,7 @@ export default function HomeScreen() {
       top: 0,
       left: 0,
       right: 0,
-      height: 320,
+      height: headerHeight,
       borderBottomLeftRadius: 30,
       borderBottomRightRadius: 30,
       zIndex: 1,
@@ -374,7 +390,7 @@ export default function HomeScreen() {
       top: 0,
       left: 0,
       right: 0,
-      height: 320,
+      height: headerHeight,
       opacity: 0.15,
       borderBottomLeftRadius: 30,
       borderBottomRightRadius: 30,
@@ -386,7 +402,7 @@ export default function HomeScreen() {
       top: 0,
       left: 0,
       right: 0,
-      height: 320,
+      height: headerHeight,
       borderBottomLeftRadius: 30,
       borderBottomRightRadius: 30,
       zIndex: 1,
@@ -394,8 +410,8 @@ export default function HomeScreen() {
     },
     headerContent: {
       paddingHorizontal: 24,
-      paddingTop: Math.max(30, insets.top + 10),
-      paddingBottom: 100,
+      paddingTop: Math.max(30, insets.top + (isIpad ? 30 : 10)),
+      paddingBottom: headerPaddingBottom,
       zIndex: 5,
     },
     greeting: {
@@ -442,7 +458,7 @@ export default function HomeScreen() {
       marginLeft: 6,
     },
     progressSection: {
-      marginTop: 0,
+      marginTop: progressTopMargin,
       paddingHorizontal: 20,
       zIndex: 10,
       position: 'relative',
@@ -458,14 +474,13 @@ export default function HomeScreen() {
       marginBottom: 16,
       borderRadius: 24,
       padding: 20,
-      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(255, 255, 255, 0.8)',
+      backgroundColor: colors.card,
       shadowColor: isDark ? 'rgba(0, 0, 0, 0.5)' : 'rgba(0, 0, 0, 0.1)',
       shadowOffset: { width: 0, height: 8 },
       shadowOpacity: 0.3,
       shadowRadius: 16,
       elevation: 8,
-      borderWidth: isDark ? 1 : 0,
-      borderColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'transparent',
+      borderWidth: 0,
     },
     progressCardHeader: {
       flexDirection: 'row',
@@ -526,7 +541,7 @@ export default function HomeScreen() {
       marginHorizontal: 20,
     },
     taskCard: {
-      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(255, 255, 255, 0.8)',
+      backgroundColor: colors.card,
       borderRadius: 24,
       padding: 20,
       marginBottom: 16,
@@ -535,8 +550,7 @@ export default function HomeScreen() {
       shadowOpacity: 0.15,
       shadowRadius: 16,
       elevation: 4,
-      borderWidth: isDark ? 1 : 0,
-      borderColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'transparent',
+      borderWidth: 0,
     },
     taskHeader: {
       flexDirection: 'row',
@@ -638,7 +652,7 @@ export default function HomeScreen() {
       paddingHorizontal: 20,
     },
     upcomingCard: {
-      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(255, 255, 255, 0.8)',
+      backgroundColor: colors.card,
       borderRadius: 24,
       padding: 20,
       marginBottom: 16,
@@ -647,8 +661,7 @@ export default function HomeScreen() {
       shadowOpacity: 0.15,
       shadowRadius: 16,
       elevation: 4,
-      borderWidth: isDark ? 1 : 0,
-      borderColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'transparent',
+      borderWidth: 0,
       minHeight: 100,
     },
     upcomingHeader: {
@@ -683,13 +696,12 @@ export default function HomeScreen() {
       lineHeight: 18,
     },
     motivationalSection: {
-      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(255, 255, 255, 0.8)',
+      backgroundColor: colors.card,
       borderRadius: 20,
       padding: 20,
       marginHorizontal: 20,
       marginTop: 20,
-      borderWidth: isDark ? 1 : 0,
-      borderColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'transparent',
+      borderWidth: 0,
       shadowColor: isDark ? 'rgba(0, 0, 0, 0.5)' : 'rgba(0, 0, 0, 0.1)',
       shadowOffset: { width: 0, height: 4 },
       shadowOpacity: 0.12,
@@ -765,7 +777,7 @@ export default function HomeScreen() {
             colors={[colors.primary, colors.primaryLight]}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
-            style={[styles.headerBackground, { height: 320 }]}
+            style={[styles.headerBackground, { height: headerHeight }]}
           />
           <LinearGradient
             colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.2)', 'rgba(0,0,0,0.1)']}

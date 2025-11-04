@@ -291,9 +291,9 @@ export default function GoalEditModal({ visible, goal, onClose, onGoalUpdated, o
             <Text style={[styles.label, { color: colors.text }]}>Title *</Text>
             <TextInput
               style={[styles.input, { 
-                backgroundColor: colors.surface, 
+                backgroundColor: colors.card, 
                 color: colors.text,
-                borderColor: colors.border 
+                borderColor: 'transparent' 
               }]}
               value={title}
               onChangeText={setTitle}
@@ -308,9 +308,9 @@ export default function GoalEditModal({ visible, goal, onClose, onGoalUpdated, o
             <Text style={[styles.label, { color: colors.text }]}>Description</Text>
             <TextInput
               style={[styles.textArea, { 
-                backgroundColor: colors.surface, 
+                backgroundColor: colors.card, 
                 color: colors.text,
-                borderColor: colors.border 
+                borderColor: 'transparent' 
               }]}
               value={description}
               onChangeText={setDescription}
@@ -325,7 +325,7 @@ export default function GoalEditModal({ visible, goal, onClose, onGoalUpdated, o
           {/* Target Date */}
           <View style={styles.section}>
             <Text style={[styles.label, { color: colors.text }]}>Target Date</Text>
-            <View style={[styles.dateInputContainer, { borderColor: colors.border }]}>
+            <View style={[styles.dateInputContainer, { borderColor: 'transparent', backgroundColor: colors.card }]}>
               <Calendar size={20} color={colors.textSecondary} />
               <TextInput
                 style={[styles.dateInput, { color: colors.text }]}
@@ -351,7 +351,7 @@ export default function GoalEditModal({ visible, goal, onClose, onGoalUpdated, o
               />
             ) : (
               <TouchableOpacity
-                style={[styles.premiumColorSection, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                style={[styles.premiumColorSection, { backgroundColor: colors.card, borderColor: 'transparent' }]}
                 onPress={() => {
                   console.log('GoalEditModal: User wants to upgrade for color picker');
                   // Close this modal first to prevent stacking
@@ -493,14 +493,14 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   input: {
-    borderWidth: 1,
+    borderWidth: 0,
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 12,
     fontSize: 16,
   },
   textArea: {
-    borderWidth: 1,
+    borderWidth: 0,
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 12,
@@ -511,7 +511,7 @@ const styles = StyleSheet.create({
   dateInputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderWidth: 1,
+    borderWidth: 0,
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 12,

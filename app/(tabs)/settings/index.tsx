@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+import React, { useRef, useState, ReactNode } from "react";
 import {
   StyleSheet,
   Text,
@@ -14,9 +14,15 @@ import {
   Alert,
   ActivityIndicator,
   ImageBackground,
+  Image,
+  StyleProp,
+  ViewStyle,
+  ModalProps,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
-import { Crown, Shield, FileText, X, Lock, Sun, Moon, Monitor, Sparkles } from "lucide-react-native";
+import { Crown, Shield, FileText, X, Lock, Sun, Moon, Monitor, Sparkles, Calendar, Edit3, Save } from "lucide-react-native";
+import DateTimePicker from '@react-native-community/datetimepicker';
+import { Picker } from '@react-native-picker/picker';
 import * as Haptics from "expo-haptics";
 import { useTheme } from "@/providers/ThemeProvider";
 import { useUser } from "@/providers/UserProvider";
@@ -27,6 +33,25 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { supabase } from "@/lib/supabase-client";
 import { subscriptionService } from "@/services/subscriptionService";
 import SubscriptionManagementModal from "@/app/components/SubscriptionManagementModal";
+
+type ModalWrapperProps = ModalProps & {
+  children: ReactNode;
+  overlayStyle: StyleProp<ViewStyle>;
+  containerStyle: StyleProp<ViewStyle>;
+};
+
+const ModalWrapper = ({
+  children,
+  overlayStyle,
+  containerStyle,
+  ...modalProps
+}: ModalWrapperProps) => (
+  <Modal {...modalProps}>
+    <View style={overlayStyle}>
+      <View style={containerStyle}>{children}</View>
+    </View>
+  </Modal>
+);
 
 export default function SettingsScreen() {
   const { colors, isDark, isGalaxy, themeMode, setThemeMode } = useTheme();
@@ -46,6 +71,7 @@ export default function SettingsScreen() {
   } = useNotifications();
   
   const [taskReminderMinutes, setTaskReminderMinutes] = useState(notificationPreferences.taskReminderMinutes);
+  const [showDobPicker, setShowDobPicker] = useState<boolean>(false);
   
   // Handle case where user is still loading or null
   if (!user) {
@@ -61,6 +87,17 @@ export default function SettingsScreen() {
   const [newPassword, setNewPassword] = useState<string>('');
   const [confirmPassword, setConfirmPassword] = useState<string>('');
   const [passwordLoading, setPasswordLoading] = useState<boolean>(false);
+  const [accountModalVisible, setAccountModalVisible] = useState<boolean>(false);
+  const [draftName, setDraftName] = useState<string>(user.name || '');
+  const [draftUsername, setDraftUsername] = useState<string>(user.username || '');
+  const [draftDob, setDraftDob] = useState<string>(user.dateOfBirth || '');
+  const [showProfileDobPicker, setShowProfileDobPicker] = useState<boolean>(false);
+  const [draftGender, setDraftGender] = useState<string>(user.gender || '');
+  const [draftHeightCm, setDraftHeightCm] = useState<string>(user.heightCm != null ? String(user.heightCm) : '');
+  const [draftHeightFt, setDraftHeightFt] = useState<string>('');
+  const [draftHeightIn, setDraftHeightIn] = useState<string>('');
+  const [draftWeightKg, setDraftWeightKg] = useState<string>(user.weightKg != null ? String(user.weightKg) : '');
+  const [draftWeightLb, setDraftWeightLb] = useState<string>('');
 
   const handleToggle = async (setting: string, value: boolean) => {
     if (Platform.OS !== "web") {
@@ -91,6 +128,89 @@ export default function SettingsScreen() {
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
     setSubscriptionModalVisible(true);
+  };
+
+  const openAccountModal = async () => {
+    if (Platform.OS !== "web") {
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+    setDraftName(user.name || '');
+    setDraftUsername(user.username || '');
+    setDraftDob(user.dateOfBirth || '');
+    setDraftGender(user.gender || '');
+    // Pre-fill height and weight based on unit system
+    if ((user.unitSystem || 'metric') === 'imperial') {
+      const inches = user.heightCm ? Math.round(user.heightCm / 2.54) : 66;
+      setDraftHeightFt(String(Math.floor(inches / 12)));
+      setDraftHeightIn(String(inches % 12));
+      setDraftWeightLb(user.weightKg != null ? String(Math.round(user.weightKg * 2.20462)) : '');
+      setDraftHeightCm('');
+      setDraftWeightKg('');
+    } else {
+      setDraftHeightCm(user.heightCm != null ? String(user.heightCm) : '');
+      setDraftWeightKg(user.weightKg != null ? String(user.weightKg) : '');
+      setDraftHeightFt('');
+      setDraftHeightIn('');
+      setDraftWeightLb('');
+    }
+    setAccountModalVisible(true);
+  };
+
+  const handleSaveAccount = async () => {
+    if (Platform.OS !== "web") {
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    }
+    // Validate and convert height/weight
+    const unit = user.unitSystem || 'metric';
+    let newHeightCm: number | undefined = undefined;
+    let newWeightKg: number | undefined = undefined;
+    if (unit === 'imperial') {
+      const ft = draftHeightFt ? parseInt(draftHeightFt, 10) : 0;
+      const inc = draftHeightIn ? parseInt(draftHeightIn, 10) : 0;
+      if (draftHeightFt || draftHeightIn) {
+        const totalIn = (isNaN(ft) ? 0 : ft) * 12 + (isNaN(inc) ? 0 : inc);
+        newHeightCm = Math.round(totalIn * 2.54);
+        if (newHeightCm < 50 || newHeightCm > 250) {
+          Alert.alert('Invalid Height', 'Height must be between 1 ft 8 in (50 cm) and 8 ft 2 in (250 cm).');
+          return;
+        }
+      }
+      if (draftWeightLb) {
+        const lb = parseInt(draftWeightLb, 10);
+        if (isNaN(lb) || lb < 44 || lb > 1100) {
+          Alert.alert('Invalid Weight', 'Weight must be between 44 and 1100 lb.');
+          return;
+        }
+        newWeightKg = Math.round(lb * 0.453592);
+      }
+    } else {
+      if (draftHeightCm) {
+        const cm = parseInt(draftHeightCm, 10);
+        if (isNaN(cm) || cm < 50 || cm > 250) {
+          Alert.alert('Invalid Height', 'Height must be between 50 and 250 cm.');
+          return;
+        }
+        newHeightCm = cm;
+      }
+      if (draftWeightKg) {
+        const kg = parseInt(draftWeightKg, 10);
+        if (isNaN(kg) || kg < 20 || kg > 500) {
+          Alert.alert('Invalid Weight', 'Weight must be between 20 and 500 kg.');
+          return;
+        }
+        newWeightKg = kg;
+      }
+    }
+
+    await updateUser({ 
+      name: draftName.trim(), 
+      username: draftUsername.trim(), 
+      dateOfBirth: draftDob || undefined,
+      gender: draftGender || undefined,
+      heightCm: newHeightCm,
+      weightKg: newWeightKg,
+    });
+    setAccountModalVisible(false);
   };
 
   const handleChangePassword = async () => {
@@ -167,7 +287,7 @@ export default function SettingsScreen() {
   const styles = StyleSheet.create({
     container: {
       flex: 1,
-      backgroundColor: isDark ? '#0a0a1a' : '#f8fafc',
+      backgroundColor: colors.background,
     },
     patternLine: {
       position: 'absolute',
@@ -336,14 +456,28 @@ export default function SettingsScreen() {
       fontWeight: "600" as const,
       color: colors.primary,
     },
+    premiumIconContainer: {
+      width: 104,
+      height: 104,
+      borderRadius: 52,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: 'rgba(255,255,255,0.15)',
+      borderWidth: 1,
+      borderColor: 'rgba(255,255,255,0.35)',
+      marginBottom: 12,
+    },
+    premiumIcon: {
+      width: 80,
+      height: 80,
+    },
     section: {
-      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(255, 255, 255, 0.8)',
+      backgroundColor: colors.card,
       marginHorizontal: 20,
       marginBottom: 16,
       borderRadius: 24,
       padding: 20,
-      borderWidth: isDark ? 1 : 0,
-      borderColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'transparent',
+      borderWidth: 0,
       shadowColor: isDark ? 'rgba(0, 0, 0, 0.5)' : 'rgba(0, 0, 0, 0.1)',
       shadowOffset: { width: 0, height: 6 },
       shadowOpacity: 0.15,
@@ -394,6 +528,34 @@ export default function SettingsScreen() {
       color: colors.text,
       minWidth: 150,
       fontFamily: 'Inter_500Medium',
+    },
+    smallInput: {
+      width: 100,
+      textAlign: 'right' as const,
+    },
+    chipRow: {
+      flexDirection: 'row',
+      flexWrap: 'wrap' as const,
+      gap: 8,
+      justifyContent: 'flex-end',
+      alignItems: 'center',
+    },
+    chip: {
+      borderWidth: 1,
+      borderColor: isDark ? 'rgba(255,255,255,0.1)' : colors.border,
+      backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.02)',
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      borderRadius: 999,
+    },
+    chipActive: {
+      backgroundColor: colors.primary,
+      borderColor: colors.primary,
+    },
+    chipText: {
+      fontSize: 14,
+      fontWeight: '600' as const,
+      color: colors.text,
     },
     actionButton: {
       backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.03)',
@@ -448,6 +610,13 @@ export default function SettingsScreen() {
       shadowRadius: 20,
       elevation: 10,
     },
+    accountModalContainer: {
+      backgroundColor: colors.card,
+      paddingBottom: 0,
+      overflow: 'hidden',
+      width: '92%',
+      maxWidth: 520,
+    },
     modalHeader: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -455,6 +624,10 @@ export default function SettingsScreen() {
       padding: 20,
       borderBottomWidth: 1,
       borderBottomColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)',
+    },
+    modalHeaderElevated: {
+      paddingHorizontal: 24,
+      paddingVertical: 22,
     },
     modalTitle: {
       fontSize: 20,
@@ -468,6 +641,15 @@ export default function SettingsScreen() {
     },
     modalContent: {
       padding: 20,
+    },
+    accountModalScroll: {
+      padding: 0,
+    },
+    accountModalContent: {
+      paddingHorizontal: 24,
+      paddingTop: 24,
+      paddingBottom: 32,
+      gap: 18,
     },
     modalSectionTitle: {
       fontSize: 18,
@@ -492,6 +674,83 @@ export default function SettingsScreen() {
       marginBottom: 6,
       paddingLeft: 12,
     },
+    modalFooter: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'flex-end',
+      gap: 12,
+      paddingHorizontal: 24,
+      paddingBottom: 24,
+      paddingTop: 18,
+      borderTopWidth: 1,
+      borderTopColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.08)',
+    },
+    secondaryButton: {
+      paddingVertical: 12,
+      paddingHorizontal: 18,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.08)',
+      backgroundColor: 'transparent',
+    },
+    secondaryButtonText: {
+      fontSize: 15,
+      fontWeight: '500' as const,
+      color: colors.textSecondary,
+    },
+    primaryButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+      paddingVertical: 12,
+      paddingHorizontal: 24,
+      borderRadius: 12,
+      backgroundColor: colors.primary,
+      flex: 1,
+    },
+    primaryButtonText: {
+      fontSize: 15,
+      fontWeight: '600' as const,
+      color: colors.background,
+    },
+    modalAccentBar: {
+      height: 6,
+      width: '100%',
+    },
+    fieldGroup: {
+      gap: 10,
+    },
+    modalTextInput: {
+      backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.04)',
+      borderWidth: 0,
+      paddingVertical: 12,
+      minHeight: 48,
+    },
+    inputRow: {
+      flexDirection: 'row',
+      gap: 12,
+    },
+    splitInput: {
+      flex: 1,
+      textAlign: 'center' as const,
+    },
+    modalFieldButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.08)',
+      backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.04)',
+    },
+    modalFieldButtonText: {
+      fontSize: 15,
+      fontWeight: '500' as const,
+      color: colors.text,
+    },
     modalLastUpdated: {
       fontSize: 13,
       color: colors.textSecondary,
@@ -500,13 +759,15 @@ export default function SettingsScreen() {
     },
     themeOptions: {
       flexDirection: 'row',
+      flexWrap: 'wrap',
       gap: 8,
       marginTop: 12,
     },
     themeOption: {
-      flex: 1,
-      paddingVertical: 10,
-      paddingHorizontal: 12,
+      width: '48%',
+      paddingVertical: 14,
+      paddingHorizontal: 16,
+      minHeight: 44,
       borderRadius: 12,
       borderWidth: 2,
       borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)',
@@ -520,7 +781,7 @@ export default function SettingsScreen() {
     themeOptionContent: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 8,
+      gap: 12,
     },
     themeOptionText: {
       fontSize: 14,
@@ -636,7 +897,11 @@ export default function SettingsScreen() {
               end={{ x: 1, y: 1 }}
               style={styles.gradientContent}
             >
-              <Crown size={48} color="white" />
+              <Image
+                source={require('@/assets/images/premium-icon-1.png')}
+                style={{ width: 72, height: 72 }}
+                resizeMode="contain"
+              />
               <Text style={styles.subscriptionTitle}>Premium Member</Text>
               <Text style={styles.subscriptionDescription}>
                 You have access to all premium features
@@ -677,7 +942,14 @@ export default function SettingsScreen() {
               end={{ x: 1, y: 1 }}
               style={styles.gradientContent}
             >
-              <Text style={styles.subscriptionTitle}>Momentum Pro</Text>
+              <View style={styles.premiumIconContainer}>
+                <Image
+                  source={require('@/assets/images/premium-icon-1.png')}
+                  style={styles.premiumIcon}
+                  resizeMode="contain"
+                />
+              </View>
+              <Text style={styles.subscriptionTitle}>Momentum Premium</Text>
               <Text style={styles.subscriptionDescription}>
                 $4.99/month • 7-day free trial for new users
               </Text>
@@ -710,34 +982,17 @@ export default function SettingsScreen() {
           <View style={styles.settingItem}>
             <View style={styles.settingRow}>
               <View style={styles.settingInfo}>
-                <Text style={styles.settingLabel}>Full Name</Text>
-                <Text style={styles.settingDescription}>Your display name</Text>
+                <Text style={styles.settingLabel}>Profile</Text>
+                <Text style={styles.settingDescription}>Name and username</Text>
               </View>
-              <TextInput
-                style={styles.textInput}
-                value={user.name}
-                onChangeText={(text) => updateUser({ name: text })}
-                placeholder="Enter name"
-                placeholderTextColor={colors.textMuted}
-              />
-            </View>
-          </View>
-          
-          <View style={styles.settingItem}>
-            <View style={styles.settingRow}>
-              <View style={styles.settingInfo}>
-                <Text style={styles.settingLabel}>Username</Text>
-                <Text style={styles.settingDescription}>Your unique identifier</Text>
-              </View>
-              <TextInput
-                style={styles.textInput}
-                value={user.username || ''}
-                onChangeText={(text) => updateUser({ username: text })}
-                placeholder="Enter username"
-                placeholderTextColor={colors.textMuted}
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
+              <TouchableOpacity 
+                style={styles.actionButton} 
+                activeOpacity={0.7}
+                onPress={openAccountModal}
+              >
+                <Edit3 size={16} color={colors.text} />
+                <Text style={styles.actionButtonText}>Edit</Text>
+              </TouchableOpacity>
             </View>
           </View>
           
@@ -874,6 +1129,8 @@ export default function SettingsScreen() {
             </View>
           </View>
         </View>
+
+      {/* Personalization moved into Edit Profile modal (entry in Account section only) */}
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Notifications</Text>
@@ -1047,282 +1304,502 @@ export default function SettingsScreen() {
       </Animated.ScrollView>
 
       {/* Privacy Policy Modal */}
-      <Modal
+      <ModalWrapper
         visible={privacyModalVisible}
         animationType="slide"
-        transparent={true}
+        transparent
         onRequestClose={() => setPrivacyModalVisible(false)}
+        overlayStyle={styles.modalOverlay}
+        containerStyle={[styles.modalContainer, { backgroundColor: colors.background }]}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContainer}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Privacy Policy</Text>
-              <TouchableOpacity
-                style={styles.closeButton}
-                onPress={() => setPrivacyModalVisible(false)}
-                activeOpacity={0.7}
-              >
-                <X size={20} color={colors.text} />
-              </TouchableOpacity>
-            </View>
-            <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={false}>
-              <Text style={styles.modalLastUpdated}>Last updated: December 27, 2024</Text>
-
-              <Text style={[styles.modalSectionTitle, styles.modalFirstSectionTitle]}>Introduction</Text>
-              <Text style={styles.modalParagraph}>
-                Welcome to Momentum. We respect your privacy and are committed to protecting your personal data. 
-                This privacy policy explains how we collect, use, and safeguard your information when you use our app.
-              </Text>
-
-              <Text style={styles.modalSectionTitle}>Information We Collect</Text>
-              <Text style={styles.modalParagraph}>We collect the following types of information:</Text>
-              <Text style={styles.modalBulletPoint}>• Account information (name, email address)</Text>
-              <Text style={styles.modalBulletPoint}>• Goal and task data you create</Text>
-              <Text style={styles.modalBulletPoint}>• App usage analytics and performance data</Text>
-              <Text style={styles.modalBulletPoint}>• Device information for app optimization</Text>
-
-              <Text style={styles.modalSectionTitle}>How We Use Your Information</Text>
-              <Text style={styles.modalParagraph}>Your information is used to:</Text>
-              <Text style={styles.modalBulletPoint}>• Provide and maintain our services</Text>
-              <Text style={styles.modalBulletPoint}>• Sync your data across devices</Text>
-              <Text style={styles.modalBulletPoint}>• Send you notifications and updates</Text>
-              <Text style={styles.modalBulletPoint}>• Improve our app and user experience</Text>
-              <Text style={styles.modalBulletPoint}>• Provide customer support</Text>
-
-              <Text style={styles.modalSectionTitle}>Data Storage and Security</Text>
-              <Text style={styles.modalParagraph}>
-                Your data is stored securely using industry-standard encryption. We use Supabase as our backend 
-                service, which provides enterprise-grade security and compliance. Your personal data is never 
-                shared with third parties without your explicit consent.
-              </Text>
-
-              <Text style={styles.modalSectionTitle}>Your Rights</Text>
-              <Text style={styles.modalParagraph}>You have the right to:</Text>
-              <Text style={styles.modalBulletPoint}>• Access your personal data</Text>
-              <Text style={styles.modalBulletPoint}>• Correct inaccurate information</Text>
-              <Text style={styles.modalBulletPoint}>• Delete your account and data</Text>
-              <Text style={styles.modalBulletPoint}>• Export your data</Text>
-              <Text style={styles.modalBulletPoint}>• Opt out of non-essential communications</Text>
-
-              <Text style={styles.modalSectionTitle}>Data Retention</Text>
-              <Text style={styles.modalParagraph}>
-                We retain your data for as long as your account is active. When you delete your account, 
-                we will permanently delete your personal data within 30 days, except where we are required 
-                to retain it for legal purposes.
-              </Text>
-
-              <Text style={styles.modalSectionTitle}>Third-Party Services</Text>
-              <Text style={styles.modalParagraph}>
-                Our app uses third-party services including Supabase for data storage and Expo for app 
-                infrastructure. These services have their own privacy policies and security measures.
-              </Text>
-
-              <Text style={styles.modalSectionTitle}>Changes to This Policy</Text>
-              <Text style={styles.modalParagraph}>
-                We may update this privacy policy from time to time. We will notify you of any significant 
-                changes by posting the new policy in the app and updating the Last updated date.
-              </Text>
-
-              <Text style={styles.modalSectionTitle}>Contact Us</Text>
-              <Text style={styles.modalParagraph}>
-                If you have any questions about this privacy policy or our data practices, please contact 
-                us at privacy@momentum-app.com.
-              </Text>
-            </ScrollView>
-          </View>
+        <View style={styles.modalHeader}>
+          <Text style={styles.modalTitle}>Privacy Policy</Text>
+          <TouchableOpacity
+            style={styles.closeButton}
+            onPress={() => setPrivacyModalVisible(false)}
+            activeOpacity={0.7}
+          >
+            <X size={20} color={colors.text} />
+          </TouchableOpacity>
         </View>
-      </Modal>
+        <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={false}>
+              <Text style={styles.modalLastUpdated}>Last updated: October 25, 2025</Text>
+
+              <Text style={[styles.modalSectionTitle, styles.modalFirstSectionTitle]}>PRIVACY POLICY</Text>
+              <Text style={styles.modalParagraph}>
+                USE AT YOUR OWN RISK: By using Momentum: AI Calendar, you acknowledge that you use the Services at your own risk. While we implement security measures to protect your information, we cannot guarantee absolute security. You are responsible for maintaining the confidentiality of your account credentials and for all activities under your account.
+              </Text>
+              <Text style={styles.modalParagraph}>
+                This Privacy Notice for Momentum: AI Calendar ("we", "us", or "our") describes how and why we might access, collect, store, use, and/or share ("process") your personal information when you use our Services, including when you use our mobile application.
+              </Text>
+              <Text style={styles.modalParagraph}>
+                Questions or concerns? Reading this Privacy Notice will help you understand your privacy rights and choices. If you do not agree with our policies and practices, please do not use our Services. If you still have questions or concerns, contact us at app.momentum.mobile@gmail.com.
+              </Text>
+
+              <Text style={styles.modalSectionTitle}>SUMMARY OF KEY POINTS</Text>
+              <Text style={styles.modalBulletPoint}>• What personal information do we process? It depends on how you use the Services.</Text>
+              <Text style={styles.modalBulletPoint}>• Do we process any sensitive information? Only with your consent or as permitted by law.</Text>
+              <Text style={styles.modalBulletPoint}>• Do we collect information from third parties? We do not collect from third parties.</Text>
+              <Text style={styles.modalBulletPoint}>• How do we process your information? To provide, improve, secure, and comply with law.</Text>
+              <Text style={styles.modalBulletPoint}>• With whom do we share? Service providers and in business transfers, as needed.</Text>
+              <Text style={styles.modalBulletPoint}>• How do we keep information safe? Organizational/technical safeguards (no method is 100% secure).</Text>
+              <Text style={styles.modalBulletPoint}>• Your rights: You may have rights to access, correct, delete, restrict, object, and portability.</Text>
+
+              <Text style={styles.modalSectionTitle}>TABLE OF CONTENTS</Text>
+              <Text style={styles.modalBulletPoint}>1. WHAT INFORMATION DO WE COLLECT?</Text>
+              <Text style={styles.modalBulletPoint}>2. HOW DO WE PROCESS YOUR INFORMATION?</Text>
+              <Text style={styles.modalBulletPoint}>3. WHAT LEGAL BASES DO WE RELY ON?</Text>
+              <Text style={styles.modalBulletPoint}>4. WHEN AND WITH WHOM DO WE SHARE?</Text>
+              <Text style={styles.modalBulletPoint}>5. DO WE OFFER AI-BASED PRODUCTS?</Text>
+              <Text style={styles.modalBulletPoint}>6. HOW LONG DO WE KEEP YOUR INFORMATION?</Text>
+              <Text style={styles.modalBulletPoint}>7. HOW DO WE KEEP YOUR INFORMATION SAFE?</Text>
+              <Text style={styles.modalBulletPoint}>8. WHAT ARE YOUR PRIVACY RIGHTS?</Text>
+              <Text style={styles.modalBulletPoint}>9. CONTROLS FOR DO-NOT-TRACK FEATURES</Text>
+              <Text style={styles.modalBulletPoint}>10. US RESIDENTS: SPECIFIC PRIVACY RIGHTS</Text>
+              <Text style={styles.modalBulletPoint}>11. DO WE MAKE UPDATES TO THIS NOTICE?</Text>
+              <Text style={styles.modalBulletPoint}>12. HOW TO CONTACT US</Text>
+              <Text style={styles.modalBulletPoint}>13. HOW TO REVIEW/UPDATE/DELETE DATA</Text>
+
+              <Text style={styles.modalSectionTitle}>1. WHAT INFORMATION DO WE COLLECT?</Text>
+              <Text style={styles.modalParagraph}>Personal information you provide, including: names, email addresses, usernames, passwords, calendar data/events, tasks/reminders, time zone and location preferences, and device information. Sensitive information (e.g., biometric) only with consent or as permitted. Google API use adheres to the Google API Services User Data Policy (Limited Use).</Text>
+
+              <Text style={styles.modalSectionTitle}>2. HOW DO WE PROCESS YOUR INFORMATION?</Text>
+              <Text style={styles.modalParagraph}>We process information to provide, improve, and administer our Services, communicate with you, ensure security/fraud prevention, and comply with law. Examples: account creation/authentication, service delivery, vital interests.</Text>
+
+              <Text style={styles.modalSectionTitle}>3. WHAT LEGAL BASES DO WE RELY ON?</Text>
+              <Text style={styles.modalParagraph}>We rely on consent, performance of a contract, legal obligations, vital interests, or legitimate interests (depending on your region, e.g., EU/UK/Canada).</Text>
+
+              <Text style={styles.modalSectionTitle}>4. WHEN AND WITH WHOM DO WE SHARE?</Text>
+              <Text style={styles.modalParagraph}>With service providers under contract and in business transfers (e.g., mergers/acquisitions). We do not sell personal information.</Text>
+
+              <Text style={styles.modalSectionTitle}>5. DO WE OFFER AI-BASED PRODUCTS?</Text>
+              <Text style={styles.modalParagraph}>We offer AI features for analysis/scheduling. AI-generated content may be inaccurate and must be verified by you. Third-party AI providers process data under their terms.</Text>
+
+              <Text style={styles.modalSectionTitle}>6. HOW LONG DO WE KEEP YOUR INFORMATION?</Text>
+              <Text style={styles.modalParagraph}>As long as necessary for the purposes in this Notice (e.g., while your account is active) or as required/permitted by law, after which we delete/anonymize where feasible.</Text>
+
+              <Text style={styles.modalSectionTitle}>7. HOW DO WE KEEP YOUR INFORMATION SAFE?</Text>
+              <Text style={styles.modalParagraph}>We implement appropriate technical/organizational measures. No method is 100% secure. Transmission is at your own risk; safeguard your credentials.</Text>
+
+              <Text style={styles.modalSectionTitle}>8. WHAT ARE YOUR PRIVACY RIGHTS?</Text>
+              <Text style={styles.modalParagraph}>Depending on your location, you may have rights to access, correct, delete, restrict, object, and portability. You can withdraw consent at any time (will not affect prior processing).</Text>
+
+              <Text style={styles.modalSectionTitle}>9. CONTROLS FOR DO-NOT-TRACK FEATURES</Text>
+              <Text style={styles.modalParagraph}>We do not currently respond to DNT signals due to lack of a uniform standard. If one is adopted, we will update this Notice.</Text>
+
+              <Text style={styles.modalSectionTitle}>10. US RESIDENTS: SPECIFIC PRIVACY RIGHTS</Text>
+              <Text style={styles.modalParagraph}>Some US states grant additional rights. Categories processed (last 12 months) may include identifiers, account records, commercial information, internet activity, geolocation (limited), inferences, and sensitive data (limited/optional).</Text>
+
+              <Text style={styles.modalSectionTitle}>11. DO WE MAKE UPDATES TO THIS NOTICE?</Text>
+              <Text style={styles.modalParagraph}>Yes. We update as necessary to stay compliant with relevant laws. Updated versions will reflect a revised date; material changes may be communicated.</Text>
+
+              <Text style={styles.modalSectionTitle}>12. HOW TO CONTACT US</Text>
+              <Text style={styles.modalParagraph}>Email: app.momentum.mobile@gmail.com</Text>
+              <Text style={styles.modalParagraph}>Momentum: AI Calendar</Text>
+              <Text style={styles.modalParagraph}>Ladera Ranch</Text>
+              <Text style={styles.modalParagraph}>Ladera Ranch, CA 92694</Text>
+              <Text style={styles.modalParagraph}>United States</Text>
+
+              <Text style={styles.modalSectionTitle}>13. HOW TO REVIEW, UPDATE, OR DELETE YOUR DATA</Text>
+              <Text style={styles.modalParagraph}>You may request access, correction, deletion, or portability of your data. Send a data subject access request (DSAR) to app.momentum.mobile@gmail.com.</Text>
+        </ScrollView>
+      </ModalWrapper>
 
       {/* Terms & Conditions Modal */}
-      <Modal
+      <ModalWrapper
         visible={termsModalVisible}
         animationType="slide"
-        transparent={true}
+        transparent
         onRequestClose={() => setTermsModalVisible(false)}
+        overlayStyle={styles.modalOverlay}
+        containerStyle={[styles.modalContainer, { backgroundColor: colors.background }]}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContainer}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Terms & Conditions</Text>
-              <TouchableOpacity
-                style={styles.closeButton}
-                onPress={() => setTermsModalVisible(false)}
-                activeOpacity={0.7}
-              >
-                <X size={20} color={colors.text} />
-              </TouchableOpacity>
-            </View>
-            <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={false}>
-              <Text style={styles.modalLastUpdated}>Last updated: December 27, 2024</Text>
-
-              <Text style={[styles.modalSectionTitle, styles.modalFirstSectionTitle]}>Agreement to Terms</Text>
-              <Text style={styles.modalParagraph}>
-                By downloading, installing, or using the Momentum app, you agree to be bound by these 
-                Terms and Conditions. If you do not agree to these terms, please do not use our service.
-              </Text>
-
-              <Text style={styles.modalSectionTitle}>Description of Service</Text>
-              <Text style={styles.modalParagraph}>
-                Momentum is a goal-tracking and productivity app that helps users set, track, and achieve 
-                their personal and professional goals. Our service includes task management, progress tracking, 
-                AI-powered coaching, and data synchronization across devices.
-              </Text>
-
-              <Text style={styles.modalSectionTitle}>User Accounts</Text>
-              <Text style={styles.modalParagraph}>
-                To use certain features of our app, you must create an account. You are responsible for:
-              </Text>
-              <Text style={styles.modalBulletPoint}>• Maintaining the confidentiality of your account credentials</Text>
-              <Text style={styles.modalBulletPoint}>• All activities that occur under your account</Text>
-              <Text style={styles.modalBulletPoint}>• Providing accurate and up-to-date information</Text>
-              <Text style={styles.modalBulletPoint}>• Notifying us immediately of any unauthorized use</Text>
-
-              <Text style={styles.modalSectionTitle}>Acceptable Use</Text>
-              <Text style={styles.modalParagraph}>You agree not to:</Text>
-              <Text style={styles.modalBulletPoint}>• Use the app for any illegal or unauthorized purpose</Text>
-              <Text style={styles.modalBulletPoint}>• Attempt to gain unauthorized access to our systems</Text>
-              <Text style={styles.modalBulletPoint}>• Interfere with or disrupt the service</Text>
-              <Text style={styles.modalBulletPoint}>• Upload malicious code or harmful content</Text>
-              <Text style={styles.modalBulletPoint}>• Violate any applicable laws or regulations</Text>
-
-              <Text style={styles.modalSectionTitle}>Subscription and Payments</Text>
-              <Text style={styles.modalParagraph}>
-                Momentum offers both free and premium subscription tiers. Premium subscriptions are billed 
-                monthly or annually. You may cancel your subscription at any time, but refunds are not 
-                provided for partial billing periods.
-              </Text>
-
-              <Text style={styles.modalSectionTitle}>Intellectual Property</Text>
-              <Text style={styles.modalParagraph}>
-                The Momentum app, including its design, features, and content, is owned by us and protected 
-                by copyright, trademark, and other intellectual property laws. You retain ownership of the 
-                content you create within the app.
-              </Text>
-
-              <Text style={styles.modalSectionTitle}>Data and Privacy</Text>
-              <Text style={styles.modalParagraph}>
-                Your privacy is important to us. Our collection and use of your personal information is 
-                governed by our Privacy Policy, which is incorporated into these terms by reference.
-              </Text>
-
-              <Text style={styles.modalSectionTitle}>Service Availability</Text>
-              <Text style={styles.modalParagraph}>
-                We strive to maintain high service availability, but we do not guarantee uninterrupted 
-                access. We may temporarily suspend the service for maintenance, updates, or other 
-                operational reasons.
-              </Text>
-
-              <Text style={styles.modalSectionTitle}>Limitation of Liability</Text>
-              <Text style={styles.modalParagraph}>
-                To the maximum extent permitted by law, we shall not be liable for any indirect, incidental, 
-                special, or consequential damages arising from your use of the app, including but not limited 
-                to loss of data, profits, or business opportunities.
-              </Text>
-
-              <Text style={styles.modalSectionTitle}>Termination</Text>
-              <Text style={styles.modalParagraph}>
-                We may terminate or suspend your account and access to the service at our discretion, 
-                with or without notice, for violations of these terms or other reasons. You may also 
-                terminate your account at any time through the app settings.
-              </Text>
-
-              <Text style={styles.modalSectionTitle}>Changes to Terms</Text>
-              <Text style={styles.modalParagraph}>
-                We reserve the right to modify these terms at any time. We will notify users of significant 
-                changes through the app or by email. Continued use of the service after changes constitutes 
-                acceptance of the new terms.
-              </Text>
-
-              <Text style={styles.modalSectionTitle}>Contact Information</Text>
-              <Text style={styles.modalParagraph}>
-                If you have questions about these Terms and Conditions, please contact us at 
-                legal@momentum-app.com.
-              </Text>
-            </ScrollView>
-          </View>
+        <View style={styles.modalHeader}>
+          <Text style={styles.modalTitle}>Terms & Conditions</Text>
+          <TouchableOpacity
+            style={styles.closeButton}
+            onPress={() => setTermsModalVisible(false)}
+            activeOpacity={0.7}
+          >
+            <X size={20} color={colors.text} />
+          </TouchableOpacity>
         </View>
-      </Modal>
+        <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={false}>
+              <Text style={styles.modalLastUpdated}>Last updated: October 25, 2025</Text>
+
+              <Text style={[styles.modalSectionTitle, styles.modalFirstSectionTitle]}>⚠️ IMPORTANT NOTICE - USE AT YOUR OWN RISK</Text>
+              <Text style={styles.modalParagraph}>BY USING MOMENTUM: AI CALENDAR, YOU ACKNOWLEDGE AND AGREE THAT:</Text>
+              <Text style={styles.modalBulletPoint}>1) You use the Services entirely at your own risk</Text>
+              <Text style={styles.modalBulletPoint}>2) AI-generated content may be inaccurate, incomplete, or unreliable</Text>
+              <Text style={styles.modalBulletPoint}>3) You are solely responsible for verifying all calendar entries, appointments, reminders, and suggestions</Text>
+              <Text style={styles.modalBulletPoint}>4) We are not liable for missed appointments, scheduling errors, or consequences arising from your use</Text>
+              <Text style={styles.modalBulletPoint}>5) No warranties are provided — the Services are provided "AS IS" and "AS AVAILABLE"</Text>
+              <Text style={styles.modalBulletPoint}>6) Our liability is limited to the maximum extent permitted by law</Text>
+
+              <Text style={styles.modalSectionTitle}>AGREEMENT TO OUR LEGAL TERMS</Text>
+              <Text style={styles.modalParagraph}>We are Momentum: AI Calendar ("Company," "we," "us," "our") located in Ladera Ranch, CA 92694, United States. We operate the Momentum: AI Calendar mobile application and related services ("Services"). By accessing the Services, you agree to these Legal Terms. IF YOU DO NOT AGREE, DO NOT USE THE SERVICES.</Text>
+              <Text style={styles.modalParagraph}>These terms may change; we will update the “Last updated” date. Continued use means you accept changes. The Services are for users at least 13 years of age; minors must have parental permission and supervision.</Text>
+
+              <Text style={styles.modalSectionTitle}>TABLE OF CONTENTS</Text>
+              <Text style={styles.modalBulletPoint}>1. OUR SERVICES</Text>
+              <Text style={styles.modalBulletPoint}>2. INTELLECTUAL PROPERTY RIGHTS</Text>
+              <Text style={styles.modalBulletPoint}>3. USER REPRESENTATIONS</Text>
+              <Text style={styles.modalBulletPoint}>4. USER REGISTRATION</Text>
+              <Text style={styles.modalBulletPoint}>5. PURCHASES AND PAYMENT</Text>
+              <Text style={styles.modalBulletPoint}>6. SUBSCRIPTIONS</Text>
+              <Text style={styles.modalBulletPoint}>7. PROHIBITED ACTIVITIES</Text>
+              <Text style={styles.modalBulletPoint}>8. AI SERVICES AND LIMITATIONS</Text>
+              <Text style={styles.modalBulletPoint}>9. USER GENERATED CONTRIBUTIONS</Text>
+              <Text style={styles.modalBulletPoint}>10. CONTRIBUTION LICENSE</Text>
+              <Text style={styles.modalBulletPoint}>11. GUIDELINES FOR REVIEWS</Text>
+              <Text style={styles.modalBulletPoint}>12. MOBILE APPLICATION LICENSE</Text>
+              <Text style={styles.modalBulletPoint}>13. SERVICES MANAGEMENT</Text>
+              <Text style={styles.modalBulletPoint}>14. PRIVACY POLICY</Text>
+              <Text style={styles.modalBulletPoint}>15. TERM AND TERMINATION</Text>
+              <Text style={styles.modalBulletPoint}>16. MODIFICATIONS AND INTERRUPTIONS</Text>
+              <Text style={styles.modalBulletPoint}>17. GOVERNING LAW</Text>
+              <Text style={styles.modalBulletPoint}>18. DISPUTE RESOLUTION</Text>
+              <Text style={styles.modalBulletPoint}>19. CORRECTIONS</Text>
+              <Text style={styles.modalBulletPoint}>20. DISCLAIMER</Text>
+              <Text style={styles.modalBulletPoint}>21. LIMITATIONS OF LIABILITY</Text>
+              <Text style={styles.modalBulletPoint}>22. INDEMNIFICATION</Text>
+              <Text style={styles.modalBulletPoint}>23. USER DATA</Text>
+              <Text style={styles.modalBulletPoint}>24. ELECTRONIC COMMUNICATIONS, TRANSACTIONS, AND SIGNATURES</Text>
+              <Text style={styles.modalBulletPoint}>25. CALIFORNIA USERS AND RESIDENTS</Text>
+              <Text style={styles.modalBulletPoint}>26. MISCELLANEOUS</Text>
+              <Text style={styles.modalBulletPoint}>27. CONTACT US</Text>
+
+              <Text style={styles.modalSectionTitle}>1. OUR SERVICES</Text>
+              <Text style={styles.modalParagraph}>Use of the Services may not be lawful in every jurisdiction. You are responsible for compliance with local laws. The Services are not tailored for industry-specific regulations (e.g., HIPAA, FISMA) and must not be used in ways that violate GLBA.</Text>
+
+              <Text style={styles.modalSectionTitle}>2. INTELLECTUAL PROPERTY RIGHTS</Text>
+              <Text style={styles.modalParagraph}>We (or our licensors) own all intellectual property rights in the Services, including source code, software, designs, text, and graphics ("Content") and marks ("Marks"). Content and Marks are provided "AS IS" for personal, non-commercial use or internal business purposes only. For permissions, contact app.momentum.mobile@gmail.com.</Text>
+
+              <Text style={styles.modalSectionTitle}>3. USER REPRESENTATIONS</Text>
+              <Text style={styles.modalParagraph}>You represent that your registration information is accurate and current; you have legal capacity; you are not under 13; you won’t use automated means to access the Services; and your use is lawful.</Text>
+
+              <Text style={styles.modalSectionTitle}>4. USER REGISTRATION</Text>
+              <Text style={styles.modalParagraph}>You may be required to register. Keep your password confidential and accept responsibility for account use. We may reclaim usernames that are inappropriate.</Text>
+
+              <Text style={styles.modalSectionTitle}>5. PURCHASES AND PAYMENT</Text>
+              <Text style={styles.modalParagraph}>Payments are processed by platform providers (e.g., Apple). Provide accurate account and payment information. Prices may change. All payments are in US dollars.</Text>
+
+              <Text style={styles.modalSectionTitle}>6. SUBSCRIPTIONS</Text>
+              <Text style={styles.modalParagraph}>Subscriptions renew automatically unless canceled via iOS App Store Subscriptions. Free trial: 7 days for new users. Purchases are non-refundable. Fee changes may occur and will be communicated as required by law.</Text>
+
+              <Text style={styles.modalSectionTitle}>7. PROHIBITED ACTIVITIES</Text>
+              <Text style={styles.modalParagraph}>Examples (non-exhaustive): data scraping; defrauding users; bypassing security; harmful content; unauthorized automation; IP infringement; unlawful use; reverse engineering; spam; impersonation; overburdening networks; and competing services not permitted.</Text>
+
+              <Text style={styles.modalSectionTitle}>8. AI SERVICES AND LIMITATIONS</Text>
+              <Text style={styles.modalParagraph}>AI-generated content may be inaccurate or unreliable. You must verify all outputs. We use third-party AI providers under their terms. No professional advice is provided. You agree to hold us harmless for consequences arising from AI errors.</Text>
+
+              <Text style={styles.modalSectionTitle}>9–11. USER CONTENT, LICENSE, AND REVIEWS</Text>
+              <Text style={styles.modalParagraph}>If enabled, contributions and reviews must be lawful and non-infringing. You grant us rights to use suggestions/feedback. We may moderate or remove content at our discretion.</Text>
+
+              <Text style={styles.modalSectionTitle}>12. MOBILE APPLICATION LICENSE</Text>
+              <Text style={styles.modalParagraph}>We grant a limited, revocable, non-transferable license to install and use the App per these terms. Additional conditions apply for Apple/Google distributors.</Text>
+
+              <Text style={styles.modalSectionTitle}>13. SERVICES MANAGEMENT</Text>
+              <Text style={styles.modalParagraph}>We may monitor violations, take legal action, restrict access, and manage Services to protect rights and ensure proper functioning.</Text>
+
+              <Text style={styles.modalSectionTitle}>14. PRIVACY POLICY</Text>
+              <Text style={styles.modalParagraph}>See our Privacy Policy. By using the Services, you agree to it. Services are hosted in the US; by accessing from other regions, you consent to processing in the US. We do not knowingly collect data from children under 13.</Text>
+
+              <Text style={styles.modalSectionTitle}>15–16. TERM; MODIFICATIONS & INTERRUPTIONS</Text>
+              <Text style={styles.modalParagraph}>We may terminate or suspend access without notice. We may change, modify, or remove content and have no obligation to update information. Downtime may occur.</Text>
+
+              <Text style={styles.modalSectionTitle}>17. GOVERNING LAW</Text>
+              <Text style={styles.modalParagraph}>These terms are governed by the laws of the State of California, without regard to conflict-of-law principles.</Text>
+
+              <Text style={styles.modalSectionTitle}>18. DISPUTE RESOLUTION</Text>
+              <Text style={styles.modalParagraph}>Informal negotiations (30 days) followed by binding arbitration (AAA rules) in Orange County, CA, unless otherwise required. No class actions. Certain IP or injunctive matters are excluded.</Text>
+
+              <Text style={styles.modalSectionTitle}>19. CORRECTIONS</Text>
+              <Text style={styles.modalParagraph}>We may correct errors or omissions at any time without prior notice.</Text>
+
+              <Text style={styles.modalSectionTitle}>20. DISCLAIMER</Text>
+              <Text style={styles.modalParagraph}>THE SERVICES ARE PROVIDED "AS IS" AND "AS AVAILABLE". YOU USE THEM AT YOUR OWN RISK. We disclaim all warranties to the fullest extent permitted by law. AI-generated content may be inaccurate; verify all information independently.</Text>
+
+              <Text style={styles.modalSectionTitle}>21. LIMITATIONS OF LIABILITY</Text>
+              <Text style={styles.modalParagraph}>We are not liable for direct/indirect/consequential/special/punitive damages including missed appointments, scheduling errors, data loss, or reliance on information. Liability is limited to the lesser of amounts paid in the prior 6 months or $100.</Text>
+
+              <Text style={styles.modalSectionTitle}>22. INDEMNIFICATION</Text>
+              <Text style={styles.modalParagraph}>You agree to defend, indemnify, and hold us harmless from claims arising from your use, breach of these terms, or violations of third-party rights or law.</Text>
+
+              <Text style={styles.modalSectionTitle}>23. USER DATA</Text>
+              <Text style={styles.modalParagraph}>We may maintain data for performance management. You are responsible for your transmitted data. We are not liable for loss or corruption of such data.</Text>
+
+              <Text style={styles.modalSectionTitle}>24. ELECTRONIC COMMUNICATIONS, TRANSACTIONS, AND SIGNATURES</Text>
+              <Text style={styles.modalParagraph}>You consent to electronic communications and agree that electronic signatures and records satisfy legal requirements for written communications.</Text>
+
+              <Text style={styles.modalSectionTitle}>25. CALIFORNIA USERS AND RESIDENTS</Text>
+              <Text style={styles.modalParagraph}>For unresolved complaints, you may contact the California Department of Consumer Affairs, 1625 North Market Blvd., Suite N-112, Sacramento, CA 95834; (800) 952-5210 or (916) 445-1254.</Text>
+
+              <Text style={styles.modalSectionTitle}>26. MISCELLANEOUS</Text>
+              <Text style={styles.modalParagraph}>These terms constitute the entire agreement. Our failure to enforce any right is not a waiver. We may assign rights/obligations at any time. If any provision is unlawful or unenforceable, the remainder remains in effect.</Text>
+
+              <Text style={styles.modalSectionTitle}>27. CONTACT US</Text>
+              <Text style={styles.modalParagraph}>Momentum: AI Calendar</Text>
+              <Text style={styles.modalParagraph}>Ladera Ranch</Text>
+              <Text style={styles.modalParagraph}>Ladera Ranch, CA 92694</Text>
+              <Text style={styles.modalParagraph}>United States</Text>
+              <Text style={styles.modalParagraph}>Phone: 949-533-8013</Text>
+              <Text style={styles.modalParagraph}>Email: app.momentum.mobile@gmail.com</Text>
+        </ScrollView>
+      </ModalWrapper>
+
+      {/* Account Edit Modal */}
+      <ModalWrapper
+        visible={accountModalVisible}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setAccountModalVisible(false)}
+        overlayStyle={styles.modalOverlay}
+        containerStyle={[styles.modalContainer, styles.accountModalContainer]}
+      >
+        <LinearGradient
+          colors={[colors.primary, colors.primaryLight]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.modalAccentBar}
+        />
+        <View style={[styles.modalHeader, styles.modalHeaderElevated]}>
+          <Text style={styles.modalTitle}>Edit Profile</Text>
+          <TouchableOpacity
+            style={styles.closeButton}
+            onPress={async () => { 
+              if (Platform.OS !== 'web') { await Haptics.selectionAsync(); }
+              setAccountModalVisible(false); 
+            }}
+            activeOpacity={0.7}
+          >
+            <X size={20} color={colors.text} />
+          </TouchableOpacity>
+        </View>
+        <ScrollView
+          style={[styles.modalContent, styles.accountModalScroll]}
+          contentContainerStyle={styles.accountModalContent}
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.fieldGroup}>
+            <Text style={[styles.settingLabel, { color: colors.text }]}>Full Name</Text>
+            <TextInput
+              style={[styles.textInput, styles.modalTextInput]}
+              value={draftName}
+              onChangeText={setDraftName}
+              placeholder="Enter name"
+              placeholderTextColor={colors.textMuted}
+            />
+          </View>
+          <View style={styles.fieldGroup}>
+            <Text style={[styles.settingLabel, { color: colors.text }]}>Username</Text>
+            <TextInput
+              style={[styles.textInput, styles.modalTextInput]}
+              value={draftUsername}
+              onChangeText={setDraftUsername}
+              placeholder="Enter username"
+              placeholderTextColor={colors.textMuted}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+          </View>
+          <View style={styles.fieldGroup}>
+            <Text style={[styles.settingLabel, { color: colors.text }]}>Date of Birth</Text>
+            <TouchableOpacity 
+              style={styles.modalFieldButton}
+              activeOpacity={0.7}
+              onPress={() => setShowProfileDobPicker(true)}
+            >
+              <Calendar size={18} color={colors.text} />
+              <Text style={styles.modalFieldButtonText}>{draftDob || 'Select date'}</Text>
+            </TouchableOpacity>
+            {showProfileDobPicker && (
+              <DateTimePicker
+                value={(() => {
+                  if (draftDob) { const p = draftDob.split('-').map(Number); return new Date(p[0], p[1]-1, p[2]); }
+                  return new Date(1995, 0, 1);
+                })()}
+                mode="date"
+                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                onChange={(e, d) => {
+                  if (Platform.OS !== 'ios') setShowProfileDobPicker(false);
+                  if (d) {
+                    const y = d.getFullYear(); const m = String(d.getMonth()+1).padStart(2,'0'); const day = String(d.getDate()).padStart(2,'0');
+                    setDraftDob(`${y}-${m}-${day}`);
+                  }
+                }}
+              />
+            )}
+          </View>
+          <View style={styles.fieldGroup}>
+            <Text style={[styles.settingLabel, { color: colors.text }]}>Gender</Text>
+            <View style={[styles.chipRow, { justifyContent: 'flex-start' }]}>
+              {['Female','Male','Non-binary','Prefer not to say'].map((g) => {
+                const selected = draftGender === g;
+                return (
+                  <TouchableOpacity
+                    key={g}
+                    style={[styles.chip, selected && styles.chipActive]}
+                    onPress={async () => { if (Platform.OS !== 'web') { await Haptics.selectionAsync(); } setDraftGender(selected ? '' : g); }}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={[styles.chipText, { color: selected ? 'white' : colors.text }]}>{g}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+          {(user.unitSystem || 'metric') === 'imperial' ? (
+            <View style={styles.fieldGroup}>
+              <Text style={[styles.settingLabel, { color: colors.text }]}>Height (ft/in)</Text>
+              <View style={styles.inputRow}>
+                <TextInput
+                  style={[styles.textInput, styles.modalTextInput, styles.splitInput]}
+                  keyboardType="number-pad"
+                  placeholder="ft"
+                  placeholderTextColor={colors.textMuted}
+                  value={draftHeightFt}
+                  onChangeText={(t) => setDraftHeightFt(t.replace(/[^0-9]/g, ''))}
+                />
+                <TextInput
+                  style={[styles.textInput, styles.modalTextInput, styles.splitInput]}
+                  keyboardType="number-pad"
+                  placeholder="in"
+                  placeholderTextColor={colors.textMuted}
+                  value={draftHeightIn}
+                  onChangeText={(t) => setDraftHeightIn(t.replace(/[^0-9]/g, ''))}
+                />
+              </View>
+              <Text style={[styles.settingLabel, { marginTop: 6, color: colors.text }]}>Weight (lb)</Text>
+              <TextInput
+                style={[styles.textInput, styles.modalTextInput, styles.splitInput]}
+                keyboardType="number-pad"
+                placeholder="e.g. 160"
+                placeholderTextColor={colors.textMuted}
+                value={draftWeightLb}
+                onChangeText={(t) => setDraftWeightLb(t.replace(/[^0-9]/g, ''))}
+              />
+            </View>
+          ) : (
+            <View style={styles.fieldGroup}>
+              <Text style={[styles.settingLabel, { color: colors.text }]}>Height (cm)</Text>
+              <TextInput
+                style={[styles.textInput, styles.modalTextInput, styles.splitInput]}
+                keyboardType="number-pad"
+                placeholder="e.g. 170"
+                placeholderTextColor={colors.textMuted}
+                value={draftHeightCm}
+                onChangeText={(t) => setDraftHeightCm(t.replace(/[^0-9]/g, ''))}
+              />
+              <Text style={[styles.settingLabel, { marginTop: 6, color: colors.text }]}>Weight (kg)</Text>
+              <TextInput
+                style={[styles.textInput, styles.modalTextInput, styles.splitInput]}
+                keyboardType="number-pad"
+                placeholder="e.g. 70"
+                placeholderTextColor={colors.textMuted}
+                value={draftWeightKg}
+                onChangeText={(t) => setDraftWeightKg(t.replace(/[^0-9]/g, ''))}
+              />
+            </View>
+          )}
+        </ScrollView>
+        <View style={styles.modalFooter}>
+          <TouchableOpacity 
+            style={styles.secondaryButton}
+            onPress={() => setAccountModalVisible(false)}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.secondaryButtonText}>Cancel</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.primaryButton}
+            onPress={handleSaveAccount}
+            activeOpacity={0.85}
+          >
+            <Save size={18} color={colors.background} />
+            <Text style={styles.primaryButtonText}>Save Changes</Text>
+          </TouchableOpacity>
+        </View>
+      </ModalWrapper>
 
       {/* Change Password Modal */}
-      <Modal
+      <ModalWrapper
         visible={changePasswordModalVisible}
         animationType="slide"
-        transparent={true}
+        transparent
         onRequestClose={() => setChangePasswordModalVisible(false)}
+        overlayStyle={styles.modalOverlay}
+        containerStyle={styles.modalContainer}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContainer}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Change Password</Text>
-              <TouchableOpacity
-                style={styles.closeButton}
-                onPress={() => setChangePasswordModalVisible(false)}
-                activeOpacity={0.7}
-              >
-                <X size={20} color={colors.text} />
-              </TouchableOpacity>
-            </View>
-            <View style={styles.modalContent}>
-              <View style={styles.settingItem}>
-                <Text style={styles.settingLabel}>Current Password</Text>
-                <TextInput
-                  style={styles.textInput}
-                  value={currentPassword}
-                  onChangeText={setCurrentPassword}
-                  placeholder="Enter current password"
-                  placeholderTextColor={colors.textMuted}
-                  secureTextEntry
-                  autoCapitalize="none"
-                />
-              </View>
-              
-              <View style={styles.settingItem}>
-                <Text style={styles.settingLabel}>New Password</Text>
-                <TextInput
-                  style={styles.textInput}
-                  value={newPassword}
-                  onChangeText={setNewPassword}
-                  placeholder="Enter new password"
-                  placeholderTextColor={colors.textMuted}
-                  secureTextEntry
-                  autoCapitalize="none"
-                />
-              </View>
-              
-              <View style={styles.settingItem}>
-                <Text style={styles.settingLabel}>Confirm New Password</Text>
-                <TextInput
-                  style={styles.textInput}
-                  value={confirmPassword}
-                  onChangeText={setConfirmPassword}
-                  placeholder="Confirm new password"
-                  placeholderTextColor={colors.textMuted}
-                  secureTextEntry
-                  autoCapitalize="none"
-                />
-              </View>
-              
-              <TouchableOpacity
-                style={[styles.actionButton, { backgroundColor: colors.primary, marginTop: 20 }]}
-                onPress={handlePasswordChange}
-                disabled={passwordLoading}
-                activeOpacity={0.7}
-              >
-                {passwordLoading ? (
-                  <ActivityIndicator size="small" color="white" />
-                ) : (
-                  <>
-                    <Lock size={16} color="white" />
-                    <Text style={[styles.actionButtonText, { color: 'white' }]}>
-                      Update Password
-                    </Text>
-                  </>
-                )}
-              </TouchableOpacity>
-            </View>
-          </View>
+        <View style={styles.modalHeader}>
+          <Text style={styles.modalTitle}>Change Password</Text>
+          <TouchableOpacity
+            style={styles.closeButton}
+            onPress={() => setChangePasswordModalVisible(false)}
+            activeOpacity={0.7}
+          >
+            <X size={20} color={colors.text} />
+          </TouchableOpacity>
         </View>
-      </Modal>
+        <View style={styles.modalContent}>
+          <View style={styles.settingItem}>
+            <Text style={styles.settingLabel}>Current Password</Text>
+            <TextInput
+              style={styles.textInput}
+              value={currentPassword}
+              onChangeText={setCurrentPassword}
+              placeholder="Enter current password"
+              placeholderTextColor={colors.textMuted}
+              secureTextEntry
+              autoCapitalize="none"
+            />
+          </View>
+          
+          <View style={styles.settingItem}>
+            <Text style={styles.settingLabel}>New Password</Text>
+            <TextInput
+              style={styles.textInput}
+              value={newPassword}
+              onChangeText={setNewPassword}
+              placeholder="Enter new password"
+              placeholderTextColor={colors.textMuted}
+              secureTextEntry
+              autoCapitalize="none"
+            />
+          </View>
+          
+          <View style={styles.settingItem}>
+            <Text style={styles.settingLabel}>Confirm New Password</Text>
+            <TextInput
+              style={styles.textInput}
+              value={confirmPassword}
+              onChangeText={setConfirmPassword}
+              placeholder="Confirm new password"
+              placeholderTextColor={colors.textMuted}
+              secureTextEntry
+              autoCapitalize="none"
+            />
+          </View>
+          
+          <TouchableOpacity
+            style={[styles.actionButton, { backgroundColor: colors.primary, marginTop: 20 }]}
+            onPress={handlePasswordChange}
+            disabled={passwordLoading}
+            activeOpacity={0.7}
+          >
+            {passwordLoading ? (
+              <ActivityIndicator size="small" color="white" />
+            ) : (
+              <>
+                <Lock size={16} color="white" />
+                <Text style={[styles.actionButtonText, { color: 'white' }]}>
+                  Update Password
+                </Text>
+              </>
+            )}
+          </TouchableOpacity>
+        </View>
+      </ModalWrapper>
 
       {/* Subscription Management Modal */}
       <SubscriptionManagementModal
