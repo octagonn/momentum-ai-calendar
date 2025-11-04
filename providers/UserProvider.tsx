@@ -167,6 +167,14 @@ export const [UserProvider, useUser] = createContextHook<UserContextType>(() => 
           if (isValidatingRef.current || isValidatingSession) {
             return;
           }
+          // Guard: only refresh if a refresh token exists
+          const { data: { session: currentSession } } = await supabase.auth.getSession();
+          const hasRefreshToken = !!(currentSession as any)?.refresh_token;
+          if (!hasRefreshToken) {
+            console.log('UserProvider: No refresh token on resume; skipping refresh.');
+            return;
+          }
+
           const { data: { session }, error } = await supabase.auth.refreshSession();
           if (error) {
             // Non-destructive: do not sign out on transient refresh errors
@@ -211,8 +219,20 @@ export const [UserProvider, useUser] = createContextHook<UserContextType>(() => 
       const { data: { session: currentSession }, error: sessionCheckError } = await supabase.auth.getSession();
       
       if (sessionCheckError || !currentSession) {
-        console.log('⚠️ Session check failed - attempting refresh...');
+        console.log('⚠️ Session check failed - evaluating refresh eligibility...');
         
+        // If there's no refresh token available, skip refresh to avoid noisy errors
+        const hasRefreshToken = !!(currentSession as any)?.refresh_token;
+        if (!hasRefreshToken) {
+          console.log('❌ No refresh token available - signing out...');
+          showTimeWarningAlert();
+          await supabase.auth.signOut();
+          setUser(null);
+          setLoading(false);
+          setIsValidatingSession(false);
+          return;
+        }
+
         const { data: { session: refreshedSession }, error: refreshError } = await supabase.auth.refreshSession();
         
         if (refreshError || !refreshedSession) {
@@ -257,7 +277,19 @@ export const [UserProvider, useUser] = createContextHook<UserContextType>(() => 
         if (error.code === '42501' || error.message?.includes('JWT')) {
           console.log('Authentication error detected - attempting to refresh session...');
           
-          // Try to refresh the session
+          // Try to refresh the session only if we have a refresh token
+          const { data: { session: currentSession2 } } = await supabase.auth.getSession();
+          const hasRefreshToken2 = !!(currentSession2 as any)?.refresh_token;
+          if (!hasRefreshToken2) {
+            console.log('No refresh token available during profile fetch; signing out.');
+            showTimeWarningAlert();
+            await supabase.auth.signOut();
+            setUser(null);
+            setLoading(false);
+            setIsValidatingSession(false);
+            return;
+          }
+
           const { data: { session }, error: refreshError } = await supabase.auth.refreshSession();
           
           if (refreshError || !session) {
@@ -591,7 +623,17 @@ export const [UserProvider, useUser] = createContextHook<UserContextType>(() => 
         if (error.code === '42501') {
           console.log('RLS policy violation detected - attempting to refresh session...');
           
-          // Try to refresh the session
+          // Try to refresh the session only if we have a refresh token
+          const { data: { session: currentSession3 } } = await supabase.auth.getSession();
+          const hasRefreshToken3 = !!(currentSession3 as any)?.refresh_token;
+          if (!hasRefreshToken3) {
+            console.log('No refresh token available during profile creation; signing out.');
+            showTimeWarningAlert();
+            await supabase.auth.signOut();
+            setUser(null);
+            return;
+          }
+
           const { data: { session }, error: refreshError } = await supabase.auth.refreshSession();
           
           if (refreshError || !session) {

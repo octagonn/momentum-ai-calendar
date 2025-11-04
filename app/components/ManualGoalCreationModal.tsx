@@ -25,6 +25,7 @@ import { supabase, createNewSupabaseClient } from '../../lib/supabase-client';
 import ColorPicker from './ColorPicker';
 import { getNextAvailableColor } from '../../lib/colorUtils';
 import { featureGate, Feature } from '../../services/featureGate';
+import { shadowSm } from '@/ui/depth';
 
 interface ManualGoalCreationModalProps {
   visible: boolean;
@@ -149,7 +150,7 @@ export default function ManualGoalCreationModal({
           />
         )}
         {/* Header */}
-        <View style={[styles.header, { borderBottomColor: colors.border }]}>
+        <View style={[styles.header, { borderBottomColor: colors.border, borderBottomWidth: 0 }]}>
           <View style={styles.headerContent}>
             <Target size={24} color={colors.primary} />
             <Text style={[styles.headerTitle, { color: colors.text }]}>
@@ -167,10 +168,10 @@ export default function ManualGoalCreationModal({
             <Text style={[styles.label, { color: colors.text }]}>Title *</Text>
             <TextInput
               style={[styles.input, { 
-                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(255, 255, 255, 0.8)', 
+                backgroundColor: colors.card, 
                 color: colors.text,
-                borderColor: colors.border 
-              }]}
+                borderColor: 'transparent' 
+              }, shadowSm(isDark)]}
               value={title}
               onChangeText={setTitle}
               placeholder="Enter goal title"
@@ -184,10 +185,10 @@ export default function ManualGoalCreationModal({
             <Text style={[styles.label, { color: colors.text }]}>Description</Text>
             <TextInput
               style={[styles.textArea, { 
-                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(255, 255, 255, 0.8)', 
+                backgroundColor: colors.card, 
                 color: colors.text,
-                borderColor: colors.border 
-              }]}
+                borderColor: 'transparent' 
+              }, shadowSm(isDark)]}
               value={description}
               onChangeText={setDescription}
               placeholder="Enter goal description"
@@ -202,7 +203,7 @@ export default function ManualGoalCreationModal({
           <View style={styles.section}>
             <Text style={[styles.label, { color: colors.text }]}>Target Date</Text>
             <TouchableOpacity
-              style={[styles.dateInputContainer, { borderColor: colors.border }]}
+              style={[styles.dateInputContainer, { borderColor: 'transparent', backgroundColor: colors.card }, shadowSm(isDark)]}
               onPress={() => setShowDatePicker(true)}
             >
               <Calendar size={20} color={colors.textSecondary} />
@@ -234,7 +235,7 @@ export default function ManualGoalCreationModal({
               />
             ) : (
               <TouchableOpacity
-                style={[styles.premiumColorSection, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                style={[styles.premiumColorSection, { backgroundColor: colors.card, borderColor: 'transparent' }, shadowSm(isDark)]}
                 onPress={() => {
                   console.log('ManualGoalCreationModal: User wants to upgrade for color picker');
                   // Close this modal first to prevent stacking
@@ -333,14 +334,14 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   input: {
-    borderWidth: 1,
+    borderWidth: 0,
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 12,
     fontSize: 16,
   },
   textArea: {
-    borderWidth: 1,
+    borderWidth: 0,
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 12,
@@ -351,7 +352,7 @@ const styles = StyleSheet.create({
   dateInputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderWidth: 1,
+    borderWidth: 0,
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 12,
@@ -397,7 +398,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   premiumColorSection: {
-    borderWidth: 1,
+    borderWidth: 0,
     borderRadius: 12,
     padding: 16,
     marginTop: 8,

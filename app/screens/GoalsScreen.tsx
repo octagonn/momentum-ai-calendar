@@ -23,6 +23,7 @@ import GoalEditModal from '../components/GoalEditModal';
 import GoalCreationChoiceModal from '../components/GoalCreationChoiceModal';
 import ManualGoalCreationModal from '../components/ManualGoalCreationModal';
 import TaskCreationModal from '../components/TaskCreationModal';
+import { shadowSm, insetTopLight, insetBottomDark, lighten } from '@/ui/depth';
 
 interface Goal {
   id?: string;
@@ -323,7 +324,8 @@ export default function GoalsScreen() {
       <TouchableOpacity
         style={[
           styles.goalCard,
-          { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(255, 255, 255, 0.8)' },
+          { backgroundColor: colors.card },
+          shadowSm(isDark),
           locked && { opacity: 0.6 }
         ]}
         onPress={() => {
@@ -354,7 +356,7 @@ export default function GoalsScreen() {
         )}
 
         <View style={styles.progressContainer}>
-          <View style={[styles.progressBar, { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)' }]}>
+          <View style={[styles.progressBar, { backgroundColor: lighten(colors.card as any, isDark ? 0.04 : 0.1) }]}>
             <View
               style={[
                 styles.progressFill,
@@ -364,6 +366,8 @@ export default function GoalsScreen() {
                 }
               ]}
             />
+            <View pointerEvents="none" style={insetTopLight(colors as any, isDark, 0.08)} />
+            <View pointerEvents="none" style={insetBottomDark(colors as any, isDark, 0.08)} />
           </View>
           <Text style={[styles.progressText, { color: colors.textSecondary }]}>
             {progressPercentage}% complete

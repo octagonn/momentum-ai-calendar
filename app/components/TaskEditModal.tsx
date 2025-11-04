@@ -18,6 +18,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../providers/ThemeProvider';
 import { useAuth } from '../../providers/AuthProvider';
 import { supabase } from '../../lib/supabase-client';
+import { shadowSm } from '@/ui/depth';
 
 interface Task {
   id: string;
@@ -208,7 +209,7 @@ export default function TaskEditModal({ visible, task, onClose, onTaskUpdated, o
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
         {/* Header */}
-        <View style={[styles.header, { borderBottomColor: colors.border }]}>
+        <View style={[styles.header, { borderBottomColor: colors.border, borderBottomWidth: 0 }]}>
           <TouchableOpacity onPress={onClose} style={styles.closeButton}>
             <X size={24} color={colors.text} />
           </TouchableOpacity>
@@ -233,11 +234,7 @@ export default function TaskEditModal({ visible, task, onClose, onTaskUpdated, o
           <View style={styles.section}>
             <Text style={[styles.label, { color: colors.text }]}>Title *</Text>
             <TextInput
-              style={[styles.input, { 
-                backgroundColor: colors.surface, 
-                color: colors.text,
-                borderColor: colors.border 
-              }]}
+              style={[styles.input, { backgroundColor: colors.card, color: colors.text, borderColor: 'transparent' }, shadowSm(isDark)]}
               value={title}
               onChangeText={setTitle}
               placeholder="Enter task title"
@@ -250,11 +247,7 @@ export default function TaskEditModal({ visible, task, onClose, onTaskUpdated, o
           <View style={styles.section}>
             <Text style={[styles.label, { color: colors.text }]}>Notes</Text>
             <TextInput
-              style={[styles.textArea, { 
-                backgroundColor: colors.surface, 
-                color: colors.text,
-                borderColor: colors.border 
-              }]}
+              style={[styles.textArea, { backgroundColor: colors.card, color: colors.text, borderColor: 'transparent' }, shadowSm(isDark)]}
               value={notes}
               onChangeText={setNotes}
               placeholder="Enter task notes"
@@ -269,7 +262,7 @@ export default function TaskEditModal({ visible, task, onClose, onTaskUpdated, o
           <View style={styles.section}>
             <Text style={[styles.label, { color: colors.text }]}>Due Date *</Text>
             <TouchableOpacity
-              style={[styles.dateInputContainer, { borderColor: colors.border }]}
+              style={[styles.dateInputContainer, { backgroundColor: colors.card, borderColor: 'transparent' }, shadowSm(isDark)]}
               onPress={() => setShowDatePicker(true)}
             >
               <Calendar size={20} color={colors.textSecondary} />
@@ -291,7 +284,7 @@ export default function TaskEditModal({ visible, task, onClose, onTaskUpdated, o
           <View style={styles.section}>
             <Text style={[styles.label, { color: colors.text }]}>Due Time</Text>
             <TouchableOpacity
-              style={[styles.timeInputContainer, { borderColor: colors.border }]}
+              style={[styles.timeInputContainer, { backgroundColor: colors.card, borderColor: 'transparent' }, shadowSm(isDark)]}
               onPress={() => setShowTimePicker(true)}
             >
               <Clock size={20} color={colors.textSecondary} />
@@ -314,11 +307,7 @@ export default function TaskEditModal({ visible, task, onClose, onTaskUpdated, o
           <View style={styles.section}>
             <Text style={[styles.label, { color: colors.text }]}>Duration (minutes)</Text>
             <TextInput
-              style={[styles.input, { 
-                backgroundColor: colors.surface, 
-                color: colors.text,
-                borderColor: colors.border 
-              }]}
+              style={[styles.input, { backgroundColor: colors.card, color: colors.text, borderColor: 'transparent' }, shadowSm(isDark)]}
               value={duration}
               onChangeText={setDuration}
               placeholder="Enter duration in minutes"
@@ -360,7 +349,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 20,
     paddingBottom: 15,
-    borderBottomWidth: 1,
+    borderBottomWidth: 0,
   },
   closeButton: {
     padding: 4,
@@ -389,14 +378,14 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   input: {
-    borderWidth: 1,
+    borderWidth: 0,
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 12,
     fontSize: 16,
   },
   textArea: {
-    borderWidth: 1,
+    borderWidth: 0,
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 12,
@@ -407,7 +396,7 @@ const styles = StyleSheet.create({
   dateInputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderWidth: 1,
+    borderWidth: 0,
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 12,
@@ -421,7 +410,7 @@ const styles = StyleSheet.create({
   timeInputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderWidth: 1,
+    borderWidth: 0,
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 12,

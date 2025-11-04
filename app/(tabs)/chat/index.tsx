@@ -26,6 +26,7 @@ import { notificationService } from '@/services/notifications';
 import { supabase } from '@/lib/supabase-client';
 import { router } from 'expo-router';
 import * as Haptics from 'expo-haptics';
+import { shadowSm, shadowMd, insetTopLight, insetBottomDark } from '@/ui/depth';
 
 interface Message {
   id: string;
@@ -462,8 +463,13 @@ export default function ChatScreen() {
             <Image source={require('@/assets/images/ai-chat-icon.png')} style={{ width: 18, height: 18 }} resizeMode="contain" />
           </View>
         )}
-        <View style={[styles.messageBubble, isUser ? styles.userBubble : styles.assistantBubble]}>
-          <Text style={[styles.messageText, isUser ? styles.userText : styles.assistantText]}>
+        <View style={[
+          styles.messageBubble,
+          isUser 
+            ? [styles.userBubble, { backgroundColor: colors.primary }, shadowMd(isDark)]
+            : [styles.assistantBubble, { backgroundColor: colors.card }, shadowSm(isDark)]
+        ]}>
+          <Text style={[styles.messageText, { color: isUser ? 'white' : colors.text }]}>
             {renderMarkdownBold(message.content)}
           </Text>
           <Text style={[styles.timestamp, isUser ? styles.userTimestamp : styles.assistantTimestamp]}>
@@ -607,12 +613,9 @@ export default function ChatScreen() {
 
       {/* Input */}
       <View style={[styles.inputContainer, { borderTopColor: colors.border }]}>
+        <View style={{ flex: 1, position: 'relative' }}>
           <TextInput
-          style={[styles.textInput, { 
-            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(255, 255, 255, 0.8)', 
-            color: colors.text,
-            borderColor: colors.border 
-          }]}
+          style={[styles.textInput, { backgroundColor: colors.card, color: colors.text }, shadowSm(isDark)]}
           value={inputText}
           onChangeText={setInputText}
           placeholder="Type your message..."
@@ -622,6 +625,9 @@ export default function ChatScreen() {
           editable={!isLoading && !isCreating}
           onSubmitEditing={handleKeyPress}
         />
+          <View pointerEvents="none" style={insetTopLight(colors as any, isDark, 0.08)} />
+          <View pointerEvents="none" style={insetBottomDark(colors as any, isDark, 0.08)} />
+        </View>
           <TouchableOpacity
             style={[
               styles.sendButton,
@@ -818,7 +824,7 @@ const styles = StyleSheet.create({
   },
   textInput: {
     flex: 1,
-    borderWidth: 1,
+    borderWidth: 0,
     borderRadius: 20,
     paddingHorizontal: 16,
     paddingVertical: 12,

@@ -15,6 +15,7 @@ import * as Haptics from 'expo-haptics';
 import { useTheme } from '@/providers/ThemeProvider';
 import { useGoals } from '@/providers/GoalsProvider';
 import TaskDetailModal from './TaskDetailModal';
+import { shadowSm } from '@/ui/depth';
 
 interface ViewAllTasksModalProps {
   visible: boolean;
@@ -178,10 +179,10 @@ export default function ViewAllTasksModal({ visible, onClose }: ViewAllTasksModa
       style={[
         styles.taskItem,
         {
-          backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(255, 255, 255, 0.8)',
+          backgroundColor: colors.card,
           borderLeftColor: task.goalColor,
         }
-      ]}
+      , shadowSm(isDark)]}
       onPress={() => handleTaskPress(task)}
       activeOpacity={0.7}
     >
@@ -301,7 +302,7 @@ export default function ViewAllTasksModal({ visible, onClose }: ViewAllTasksModa
       justifyContent: 'space-between',
       paddingHorizontal: 20,
       paddingVertical: 16,
-      borderBottomWidth: 1,
+      borderBottomWidth: 0,
       borderBottomColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.05)',
     },
     headerTitle: {

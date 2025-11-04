@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { X, Clock, Calendar, Target, CheckCircle, Circle } from 'lucide-react-native';
 import { useTheme } from '../../providers/ThemeProvider';
+import { shadowSm } from '@/ui/depth';
 
 interface Task {
   id: string;
@@ -69,7 +70,7 @@ export default function TaskDetailModal({
           />
         )}
         {/* Header */}
-        <View style={[styles.header, { borderBottomColor: colors.border }]}>
+        <View style={[styles.header, { borderBottomColor: colors.border, borderBottomWidth: 0 }]}>
           <TouchableOpacity
             onPress={onClose}
             style={styles.closeButton}
@@ -115,7 +116,7 @@ export default function TaskDetailModal({
               <Text style={[styles.sectionTitle, { color: colors.text }]}>
                 Related Goal
               </Text>
-              <View style={[styles.goalContainer, { backgroundColor: 'rgba(255, 255, 255, 0.1)' }]}>
+              <View style={[styles.goalContainer, { backgroundColor: colors.card }, shadowSm(false)]}>
                 <Target size={20} color={task.goalColor || colors.primary} />
                 <Text style={[styles.goalTitle, { color: task.goalColor || colors.primary }]}>
                   {task.goalTitle}
@@ -129,7 +130,7 @@ export default function TaskDetailModal({
 
             {/* Time */}
             {task.time && (
-              <View style={[styles.detailCard, { backgroundColor: 'rgba(255, 255, 255, 0.1)' }]}>
+              <View style={[styles.detailCard, { backgroundColor: colors.card }, shadowSm(false)]}>
                 <Clock size={20} color={colors.primary} />
                 <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>
                   Time
@@ -142,7 +143,7 @@ export default function TaskDetailModal({
 
             {/* Duration */}
             {task.estimated_duration && (
-              <View style={[styles.detailCard, { backgroundColor: 'rgba(255, 255, 255, 0.1)' }]}>
+              <View style={[styles.detailCard, { backgroundColor: colors.card }, shadowSm(false)]}>
                 <Calendar size={20} color={colors.primary} />
                 <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>
                   Duration
@@ -197,7 +198,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 60,
     paddingBottom: 20,
-    borderBottomWidth: 1,
+    borderBottomWidth: 0,
   },
   closeButton: {
     padding: 4,
