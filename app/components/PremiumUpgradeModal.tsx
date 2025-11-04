@@ -19,6 +19,7 @@ import { useSubscription } from '@/providers/SubscriptionProvider';
 import { useAuth } from '../../providers/AuthProvider';
 import { subscriptionService } from '../../services/subscriptionService';
 import { Subscription } from '../../lib/iap-wrapper';
+import { shadowSm, insetTopLight, insetBottomDark } from '@/ui/depth';
 
 interface PremiumUpgradeModalProps {
   visible: boolean;
@@ -254,12 +255,11 @@ export default function PremiumUpgradeModal({
                   style={[
                     styles.pricingOption,
                     { 
-                      backgroundColor: colors.surface,
-                      borderColor: selected === p.productId 
-                        ? colors.primary 
-                        : colors.border,
-                      borderWidth: selected === p.productId ? 2 : 1,
+                      backgroundColor: colors.card,
+                      borderColor: selected === p.productId ? colors.primary : 'transparent',
+                      borderWidth: selected === p.productId ? 2 : 0,
                     }
+                    , shadowSm(isDark)
                   ]}
                   onPress={() => setSelected(p.productId)}
                   disabled={loading}
@@ -284,6 +284,8 @@ export default function PremiumUpgradeModal({
                       {p.description}
                     </Text>
                   )}
+                  <View pointerEvents="none" style={insetTopLight(colors as any, isDark, 0.06)} />
+                  <View pointerEvents="none" style={insetBottomDark(colors as any, isDark, 0.06)} />
                 </TouchableOpacity>
               ))}
             </View>

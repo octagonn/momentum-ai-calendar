@@ -13,6 +13,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../providers/ThemeProvider';
 import { useUser } from '../../providers/UserProvider';
 import { useSubscription } from '../../providers/SubscriptionProvider';
+import { shadowSm, insetTopLight, insetBottomDark } from '@/ui/depth';
 
 interface GoalCreationChoiceModalProps {
   visible: boolean;
@@ -45,7 +46,7 @@ export default function GoalCreationChoiceModal({
       <View style={styles.modalOverlay}>
         <View style={[styles.modal, { backgroundColor: colors.card }]}>
           {/* Header */}
-          <View style={[styles.header, { borderBottomColor: colors.border }]}>
+          <View style={[styles.header, { borderBottomColor: colors.border, borderBottomWidth: 0 }]}>
             <View style={styles.headerContent}>
               <Target size={24} color={colors.primary} />
               <Text style={[styles.headerTitle, { color: colors.text }]}>
@@ -65,11 +66,11 @@ export default function GoalCreationChoiceModal({
 
             {/* AI Option */}
             <TouchableOpacity
-              style={[styles.optionCard, { 
-                backgroundColor: colors.surface,
-                borderColor: colors.border,
-                opacity: isPremium ? 1 : 0.8
-              }]}
+              style={[
+                styles.optionCard,
+                { backgroundColor: colors.card, opacity: isPremium ? 1 : 0.8 },
+                shadowSm(isDark),
+              ]}
               onPress={() => {
                 if (isPremium) {
                   onChooseAI();
@@ -108,14 +109,17 @@ export default function GoalCreationChoiceModal({
                   )}
                 </View>
               </View>
+              <View pointerEvents="none" style={insetTopLight(colors as any, isDark, 0.06)} />
+              <View pointerEvents="none" style={insetBottomDark(colors as any, isDark, 0.06)} />
             </TouchableOpacity>
 
             {/* Manual Option */}
             <TouchableOpacity
-              style={[styles.optionCard, { 
-                backgroundColor: colors.surface,
-                borderColor: colors.border 
-              }]}
+              style={[
+                styles.optionCard,
+                { backgroundColor: colors.card },
+                shadowSm(isDark),
+              ]}
               onPress={onChooseManual}
               activeOpacity={0.7}
             >
@@ -130,6 +134,8 @@ export default function GoalCreationChoiceModal({
                   Create your goal manually and add tasks as needed
                 </Text>
               </View>
+              <View pointerEvents="none" style={insetTopLight(colors as any, isDark, 0.06)} />
+              <View pointerEvents="none" style={insetBottomDark(colors as any, isDark, 0.06)} />
             </TouchableOpacity>
           </View>
         </View>
@@ -184,7 +190,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 20,
     borderRadius: 16,
-    borderWidth: 1,
+    borderWidth: 0,
     marginBottom: 16,
   },
   optionIcon: {

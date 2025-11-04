@@ -21,6 +21,7 @@ import { useUser } from "@/providers/UserProvider";
 import { useGoals } from "@/providers/GoalsProvider";
 import TaskDetailModal from "@/app/components/TaskDetailModal";
 import ViewAllTasksModal from "@/app/components/ViewAllTasksModal";
+import { shadowSm } from "@/ui/depth";
 
 
 
@@ -267,9 +268,9 @@ export default function HomeScreen() {
   const { width } = Dimensions.get('window');
   const scrollY = useRef(new Animated.Value(0)).current;
   const isIpad = Platform.OS === 'ios' && (Platform as any).isPad === true;
-  const headerHeight = isIpad ? 380 : 320;
-  const headerPaddingBottom = isIpad ? 120 : 100;
-  const progressTopMargin = isIpad ? 16 : 0;
+  const headerHeight = isIpad ? 340 : 280;
+  const headerPaddingBottom = isIpad ? 110 : 90;
+  const progressTopMargin = 16;
   
   const headerOpacity = scrollY.interpolate({
     inputRange: [0, 100],
@@ -305,7 +306,7 @@ export default function HomeScreen() {
   const styles = StyleSheet.create({
     container: {
       flex: 1,
-      backgroundColor: isDark ? '#0a0a1a' : '#f8fafc',
+      backgroundColor: colors.background,
     },
     patternLine: {
       position: 'absolute',
@@ -473,14 +474,13 @@ export default function HomeScreen() {
       marginBottom: 16,
       borderRadius: 24,
       padding: 20,
-      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(255, 255, 255, 0.8)',
+      backgroundColor: colors.card,
       shadowColor: isDark ? 'rgba(0, 0, 0, 0.5)' : 'rgba(0, 0, 0, 0.1)',
       shadowOffset: { width: 0, height: 8 },
       shadowOpacity: 0.3,
       shadowRadius: 16,
       elevation: 8,
-      borderWidth: isDark ? 1 : 0,
-      borderColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'transparent',
+      borderWidth: 0,
     },
     progressCardHeader: {
       flexDirection: 'row',
@@ -541,7 +541,7 @@ export default function HomeScreen() {
       marginHorizontal: 20,
     },
     taskCard: {
-      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(255, 255, 255, 0.8)',
+      backgroundColor: colors.card,
       borderRadius: 24,
       padding: 20,
       marginBottom: 16,
@@ -550,8 +550,7 @@ export default function HomeScreen() {
       shadowOpacity: 0.15,
       shadowRadius: 16,
       elevation: 4,
-      borderWidth: isDark ? 1 : 0,
-      borderColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'transparent',
+      borderWidth: 0,
     },
     taskHeader: {
       flexDirection: 'row',
@@ -653,7 +652,7 @@ export default function HomeScreen() {
       paddingHorizontal: 20,
     },
     upcomingCard: {
-      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(255, 255, 255, 0.8)',
+      backgroundColor: colors.card,
       borderRadius: 24,
       padding: 20,
       marginBottom: 16,
@@ -662,8 +661,7 @@ export default function HomeScreen() {
       shadowOpacity: 0.15,
       shadowRadius: 16,
       elevation: 4,
-      borderWidth: isDark ? 1 : 0,
-      borderColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'transparent',
+      borderWidth: 0,
       minHeight: 100,
     },
     upcomingHeader: {
@@ -698,13 +696,12 @@ export default function HomeScreen() {
       lineHeight: 18,
     },
     motivationalSection: {
-      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(255, 255, 255, 0.8)',
+      backgroundColor: colors.card,
       borderRadius: 20,
       padding: 20,
       marginHorizontal: 20,
       marginTop: 20,
-      borderWidth: isDark ? 1 : 0,
-      borderColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'transparent',
+      borderWidth: 0,
       shadowColor: isDark ? 'rgba(0, 0, 0, 0.5)' : 'rgba(0, 0, 0, 0.1)',
       shadowOffset: { width: 0, height: 4 },
       shadowOpacity: 0.12,
@@ -780,7 +777,7 @@ export default function HomeScreen() {
             colors={[colors.primary, colors.primaryLight]}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
-            style={[styles.headerBackground, { height: 320 }]}
+            style={[styles.headerBackground, { height: headerHeight }]}
           />
           <LinearGradient
             colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.2)', 'rgba(0,0,0,0.1)']}

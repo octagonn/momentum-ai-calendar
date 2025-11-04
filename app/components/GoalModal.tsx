@@ -17,6 +17,7 @@ import { useAuth } from '../../providers/AuthProvider';
 import { supabase } from '../../lib/supabase-client';
 import { useGoals } from '../../providers/GoalsProvider';
 import { useSubscription } from '../../providers/SubscriptionProvider';
+import { shadowSm } from '@/ui/depth';
 // GoalEditModal is now rendered at a higher level to avoid nested modals
 import TaskEditModal from './TaskEditModal';
 import TaskViewModal from './TaskViewModal';
@@ -485,10 +486,8 @@ function TaskItem({ task, onToggle, onPress, colors, isDark, formatDate, formatT
     <TouchableOpacity
       style={[
         styles.taskItem,
-        { 
-          backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(255, 255, 255, 0.8)',
-          borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)',
-        }
+        { backgroundColor: colors.card, borderColor: 'transparent' },
+        shadowSm(isDark),
       ]}
       onPress={() => onPress(task)}
       activeOpacity={0.7}
@@ -631,7 +630,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 16,
     marginBottom: 12,
-    borderWidth: 1,
+    borderWidth: 0,
   },
   taskContent: {
     flex: 1,

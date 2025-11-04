@@ -1,6 +1,6 @@
 import { Stack, useRouter } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
-import { Platform } from "react-native";
+import { Platform, Text, TextInput } from "react-native";
 import React, { useEffect } from "react";
 import { StyleSheet } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
@@ -23,6 +23,19 @@ if (Platform.OS !== 'web') {
   // Guard to avoid errors on platforms without native splash
   SplashScreen.preventAutoHideAsync().catch(() => {});
 }
+
+// Global text scaling defaults for accessibility while keeping layouts stable
+// Allow scaling and cap extremely large multipliers to avoid layout breakage
+(Text as any).defaultProps = {
+  ...((Text as any).defaultProps || {}),
+  allowFontScaling: true,
+  maxFontSizeMultiplier: 2.0,
+};
+(TextInput as any).defaultProps = {
+  ...((TextInput as any).defaultProps || {}),
+  allowFontScaling: true,
+  maxFontSizeMultiplier: 2.0,
+};
 
 function RootLayoutNav() {
   const router = useRouter();

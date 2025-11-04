@@ -167,7 +167,7 @@ export default function TaskViewModal({ visible, task, onClose, onEdit, onTaskUp
     >
       <View style={[styles.container, { backgroundColor: colors.background }]}>
         {/* Header */}
-        <View style={[styles.header, { borderBottomColor: colors.border }]}>
+        <View style={[styles.header, { borderBottomColor: colors.border, borderBottomWidth: 0 }]}>
           <TouchableOpacity onPress={onClose} style={styles.closeButton}>
             <X size={24} color={colors.text} />
           </TouchableOpacity>

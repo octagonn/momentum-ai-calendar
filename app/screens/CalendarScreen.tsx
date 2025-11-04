@@ -23,6 +23,7 @@ import { useTheme } from '../../providers/ThemeProvider';
 import { useAuth } from '../../providers/AuthProvider';
 import { supabase, createNewSupabaseClient } from '../../lib/supabase-client';
 import GoalModal from '../components/GoalModal';
+import { shadowSm } from '@/ui/depth';
 
 interface Task {
   id: string;
@@ -962,7 +963,7 @@ export default function CalendarScreen() {
           onGestureEvent={onGestureEvent}
           onHandlerStateChange={onHandlerStateChange}
         >
-          <View style={styles.weekContainer}>
+          <View style={[styles.weekContainer, { backgroundColor: isGalaxy ? 'transparent' : colors.card }, shadowSm(isDark)]}>
             {/* Days of the week */}
             <View style={styles.daysHeader}>
               {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day, index) => (
@@ -1003,6 +1004,7 @@ export default function CalendarScreen() {
                         <View style={[
                           styles.dateCircle,
                           isSelected && { backgroundColor: colors.primary },
+                          isSelected && shadowSm(isDark),
                           !isCurrentMonth && styles.dateCircleInactive
                         ]}>
                           <Text style={[
@@ -1064,9 +1066,10 @@ export default function CalendarScreen() {
                           onPress={() => setSelectedDate(dateString)}
                           activeOpacity={0.7}
                         >
-                          <View style={[
+                        <View style={[
                             styles.dateCircle,
                             isSelected && { backgroundColor: colors.primary },
+                            isSelected && shadowSm(isDark),
                             !isCurrentMonth && styles.dateCircleInactive
                           ]}>
                             <Text style={[
@@ -1148,6 +1151,7 @@ export default function CalendarScreen() {
                       >
                         <View style={[
                           styles.dateCircle,
+                          { backgroundColor: colors.card },
                           isSelected && { backgroundColor: colors.primary },
                           !isCurrentMonth && styles.dateCircleInactive
                         ]}>
@@ -1218,10 +1222,8 @@ export default function CalendarScreen() {
                   key={task.id}
                   style={[
                     styles.eventCard,
-                    { 
-                      backgroundColor: colors.card,
-                      borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)',
-                    }
+                    { backgroundColor: colors.card },
+                    shadowSm(isDark),
                   ]}
                   onPress={() => handleTaskToggle(task)}
                   activeOpacity={0.7}
@@ -1408,7 +1410,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 16,
     borderRadius: 8,
-    borderWidth: 1,
+    borderWidth: 0,
     marginBottom: 8,
     backgroundColor: 'rgba(255, 255, 255, 0.1)',
   },

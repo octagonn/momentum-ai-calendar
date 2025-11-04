@@ -177,6 +177,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const refreshSession = async () => {
     try {
       console.log('AuthProvider: Refreshing session...');
+      // Only attempt refresh if a refresh token exists to avoid noisy errors
+      const { data: { session: currentSession } } = await supabase.auth.getSession();
+      const hasRefreshToken = !!(currentSession as any)?.refresh_token;
+      if (!hasRefreshToken) {
+        console.log('AuthProvider: No refresh token present; skipping refresh.');
+        return;
+      }
+
       const { data: { session }, error } = await supabase.auth.refreshSession();
       if (error) {
         console.error('Error refreshing session:', error);

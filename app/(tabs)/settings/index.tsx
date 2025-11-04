@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+import React, { useRef, useState, ReactNode } from "react";
 import {
   StyleSheet,
   Text,
@@ -15,9 +15,12 @@ import {
   ActivityIndicator,
   ImageBackground,
   Image,
+  StyleProp,
+  ViewStyle,
+  ModalProps,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
-import { Crown, Shield, FileText, X, Lock, Sun, Moon, Monitor, Sparkles, Calendar } from "lucide-react-native";
+import { Crown, Shield, FileText, X, Lock, Sun, Moon, Monitor, Sparkles, Calendar, Edit3, Save } from "lucide-react-native";
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Picker } from '@react-native-picker/picker';
 import * as Haptics from "expo-haptics";
@@ -30,6 +33,25 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { supabase } from "@/lib/supabase-client";
 import { subscriptionService } from "@/services/subscriptionService";
 import SubscriptionManagementModal from "@/app/components/SubscriptionManagementModal";
+
+type ModalWrapperProps = ModalProps & {
+  children: ReactNode;
+  overlayStyle: StyleProp<ViewStyle>;
+  containerStyle: StyleProp<ViewStyle>;
+};
+
+const ModalWrapper = ({
+  children,
+  overlayStyle,
+  containerStyle,
+  ...modalProps
+}: ModalWrapperProps) => (
+  <Modal {...modalProps}>
+    <View style={overlayStyle}>
+      <View style={containerStyle}>{children}</View>
+    </View>
+  </Modal>
+);
 
 export default function SettingsScreen() {
   const { colors, isDark, isGalaxy, themeMode, setThemeMode } = useTheme();
@@ -65,6 +87,17 @@ export default function SettingsScreen() {
   const [newPassword, setNewPassword] = useState<string>('');
   const [confirmPassword, setConfirmPassword] = useState<string>('');
   const [passwordLoading, setPasswordLoading] = useState<boolean>(false);
+  const [accountModalVisible, setAccountModalVisible] = useState<boolean>(false);
+  const [draftName, setDraftName] = useState<string>(user.name || '');
+  const [draftUsername, setDraftUsername] = useState<string>(user.username || '');
+  const [draftDob, setDraftDob] = useState<string>(user.dateOfBirth || '');
+  const [showProfileDobPicker, setShowProfileDobPicker] = useState<boolean>(false);
+  const [draftGender, setDraftGender] = useState<string>(user.gender || '');
+  const [draftHeightCm, setDraftHeightCm] = useState<string>(user.heightCm != null ? String(user.heightCm) : '');
+  const [draftHeightFt, setDraftHeightFt] = useState<string>('');
+  const [draftHeightIn, setDraftHeightIn] = useState<string>('');
+  const [draftWeightKg, setDraftWeightKg] = useState<string>(user.weightKg != null ? String(user.weightKg) : '');
+  const [draftWeightLb, setDraftWeightLb] = useState<string>('');
 
   const handleToggle = async (setting: string, value: boolean) => {
     if (Platform.OS !== "web") {
@@ -95,6 +128,89 @@ export default function SettingsScreen() {
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
     setSubscriptionModalVisible(true);
+  };
+
+  const openAccountModal = async () => {
+    if (Platform.OS !== "web") {
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+    setDraftName(user.name || '');
+    setDraftUsername(user.username || '');
+    setDraftDob(user.dateOfBirth || '');
+    setDraftGender(user.gender || '');
+    // Pre-fill height and weight based on unit system
+    if ((user.unitSystem || 'metric') === 'imperial') {
+      const inches = user.heightCm ? Math.round(user.heightCm / 2.54) : 66;
+      setDraftHeightFt(String(Math.floor(inches / 12)));
+      setDraftHeightIn(String(inches % 12));
+      setDraftWeightLb(user.weightKg != null ? String(Math.round(user.weightKg * 2.20462)) : '');
+      setDraftHeightCm('');
+      setDraftWeightKg('');
+    } else {
+      setDraftHeightCm(user.heightCm != null ? String(user.heightCm) : '');
+      setDraftWeightKg(user.weightKg != null ? String(user.weightKg) : '');
+      setDraftHeightFt('');
+      setDraftHeightIn('');
+      setDraftWeightLb('');
+    }
+    setAccountModalVisible(true);
+  };
+
+  const handleSaveAccount = async () => {
+    if (Platform.OS !== "web") {
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    }
+    // Validate and convert height/weight
+    const unit = user.unitSystem || 'metric';
+    let newHeightCm: number | undefined = undefined;
+    let newWeightKg: number | undefined = undefined;
+    if (unit === 'imperial') {
+      const ft = draftHeightFt ? parseInt(draftHeightFt, 10) : 0;
+      const inc = draftHeightIn ? parseInt(draftHeightIn, 10) : 0;
+      if (draftHeightFt || draftHeightIn) {
+        const totalIn = (isNaN(ft) ? 0 : ft) * 12 + (isNaN(inc) ? 0 : inc);
+        newHeightCm = Math.round(totalIn * 2.54);
+        if (newHeightCm < 50 || newHeightCm > 250) {
+          Alert.alert('Invalid Height', 'Height must be between 1 ft 8 in (50 cm) and 8 ft 2 in (250 cm).');
+          return;
+        }
+      }
+      if (draftWeightLb) {
+        const lb = parseInt(draftWeightLb, 10);
+        if (isNaN(lb) || lb < 44 || lb > 1100) {
+          Alert.alert('Invalid Weight', 'Weight must be between 44 and 1100 lb.');
+          return;
+        }
+        newWeightKg = Math.round(lb * 0.453592);
+      }
+    } else {
+      if (draftHeightCm) {
+        const cm = parseInt(draftHeightCm, 10);
+        if (isNaN(cm) || cm < 50 || cm > 250) {
+          Alert.alert('Invalid Height', 'Height must be between 50 and 250 cm.');
+          return;
+        }
+        newHeightCm = cm;
+      }
+      if (draftWeightKg) {
+        const kg = parseInt(draftWeightKg, 10);
+        if (isNaN(kg) || kg < 20 || kg > 500) {
+          Alert.alert('Invalid Weight', 'Weight must be between 20 and 500 kg.');
+          return;
+        }
+        newWeightKg = kg;
+      }
+    }
+
+    await updateUser({ 
+      name: draftName.trim(), 
+      username: draftUsername.trim(), 
+      dateOfBirth: draftDob || undefined,
+      gender: draftGender || undefined,
+      heightCm: newHeightCm,
+      weightKg: newWeightKg,
+    });
+    setAccountModalVisible(false);
   };
 
   const handleChangePassword = async () => {
@@ -171,7 +287,7 @@ export default function SettingsScreen() {
   const styles = StyleSheet.create({
     container: {
       flex: 1,
-      backgroundColor: isDark ? '#0a0a1a' : '#f8fafc',
+      backgroundColor: colors.background,
     },
     patternLine: {
       position: 'absolute',
@@ -356,13 +472,12 @@ export default function SettingsScreen() {
       height: 80,
     },
     section: {
-      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(255, 255, 255, 0.8)',
+      backgroundColor: colors.card,
       marginHorizontal: 20,
       marginBottom: 16,
       borderRadius: 24,
       padding: 20,
-      borderWidth: isDark ? 1 : 0,
-      borderColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'transparent',
+      borderWidth: 0,
       shadowColor: isDark ? 'rgba(0, 0, 0, 0.5)' : 'rgba(0, 0, 0, 0.1)',
       shadowOffset: { width: 0, height: 6 },
       shadowOpacity: 0.15,
@@ -495,6 +610,13 @@ export default function SettingsScreen() {
       shadowRadius: 20,
       elevation: 10,
     },
+    accountModalContainer: {
+      backgroundColor: colors.card,
+      paddingBottom: 0,
+      overflow: 'hidden',
+      width: '92%',
+      maxWidth: 520,
+    },
     modalHeader: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -502,6 +624,10 @@ export default function SettingsScreen() {
       padding: 20,
       borderBottomWidth: 1,
       borderBottomColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)',
+    },
+    modalHeaderElevated: {
+      paddingHorizontal: 24,
+      paddingVertical: 22,
     },
     modalTitle: {
       fontSize: 20,
@@ -515,6 +641,15 @@ export default function SettingsScreen() {
     },
     modalContent: {
       padding: 20,
+    },
+    accountModalScroll: {
+      padding: 0,
+    },
+    accountModalContent: {
+      paddingHorizontal: 24,
+      paddingTop: 24,
+      paddingBottom: 32,
+      gap: 18,
     },
     modalSectionTitle: {
       fontSize: 18,
@@ -538,6 +673,83 @@ export default function SettingsScreen() {
       color: colors.text,
       marginBottom: 6,
       paddingLeft: 12,
+    },
+    modalFooter: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'flex-end',
+      gap: 12,
+      paddingHorizontal: 24,
+      paddingBottom: 24,
+      paddingTop: 18,
+      borderTopWidth: 1,
+      borderTopColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.08)',
+    },
+    secondaryButton: {
+      paddingVertical: 12,
+      paddingHorizontal: 18,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.08)',
+      backgroundColor: 'transparent',
+    },
+    secondaryButtonText: {
+      fontSize: 15,
+      fontWeight: '500' as const,
+      color: colors.textSecondary,
+    },
+    primaryButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+      paddingVertical: 12,
+      paddingHorizontal: 24,
+      borderRadius: 12,
+      backgroundColor: colors.primary,
+      flex: 1,
+    },
+    primaryButtonText: {
+      fontSize: 15,
+      fontWeight: '600' as const,
+      color: colors.background,
+    },
+    modalAccentBar: {
+      height: 6,
+      width: '100%',
+    },
+    fieldGroup: {
+      gap: 10,
+    },
+    modalTextInput: {
+      backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.04)',
+      borderWidth: 0,
+      paddingVertical: 12,
+      minHeight: 48,
+    },
+    inputRow: {
+      flexDirection: 'row',
+      gap: 12,
+    },
+    splitInput: {
+      flex: 1,
+      textAlign: 'center' as const,
+    },
+    modalFieldButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.08)',
+      backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.04)',
+    },
+    modalFieldButtonText: {
+      fontSize: 15,
+      fontWeight: '500' as const,
+      color: colors.text,
     },
     modalLastUpdated: {
       fontSize: 13,
@@ -770,34 +982,17 @@ export default function SettingsScreen() {
           <View style={styles.settingItem}>
             <View style={styles.settingRow}>
               <View style={styles.settingInfo}>
-                <Text style={styles.settingLabel}>Full Name</Text>
-                <Text style={styles.settingDescription}>Your display name</Text>
+                <Text style={styles.settingLabel}>Profile</Text>
+                <Text style={styles.settingDescription}>Name and username</Text>
               </View>
-              <TextInput
-                style={styles.textInput}
-                value={user.name}
-                onChangeText={(text) => updateUser({ name: text })}
-                placeholder="Enter name"
-                placeholderTextColor={colors.textMuted}
-              />
-            </View>
-          </View>
-          
-          <View style={styles.settingItem}>
-            <View style={styles.settingRow}>
-              <View style={styles.settingInfo}>
-                <Text style={styles.settingLabel}>Username</Text>
-                <Text style={styles.settingDescription}>Your unique identifier</Text>
-              </View>
-              <TextInput
-                style={styles.textInput}
-                value={user.username || ''}
-                onChangeText={(text) => updateUser({ username: text })}
-                placeholder="Enter username"
-                placeholderTextColor={colors.textMuted}
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
+              <TouchableOpacity 
+                style={styles.actionButton} 
+                activeOpacity={0.7}
+                onPress={openAccountModal}
+              >
+                <Edit3 size={16} color={colors.text} />
+                <Text style={styles.actionButtonText}>Edit</Text>
+              </TouchableOpacity>
             </View>
           </View>
           
@@ -935,142 +1130,7 @@ export default function SettingsScreen() {
           </View>
         </View>
 
-      {/* Personalization */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Personalization</Text>
-
-        {/* Date of birth (view only) */}
-        <View style={styles.settingItem}>
-          <View style={styles.settingRow}>
-            <View style={styles.settingInfo}>
-              <Text style={styles.settingLabel}>Date of Birth</Text>
-              <Text style={styles.settingDescription}>Optional, used only to personalize plans</Text>
-            </View>
-            <View style={[styles.actionButton, { opacity: 0.7 }]}> 
-              <Calendar size={16} color={colors.text} />
-              <Text style={styles.actionButtonText}>
-                {user.dateOfBirth ? (() => { const p = user.dateOfBirth.split('-'); const d = new Date(parseInt(p[0],10), parseInt(p[1],10)-1, parseInt(p[2],10)); return d.toLocaleDateString(); })() : '—'}
-              </Text>
-            </View>
-          </View>
-        </View>
-        {/* DOB editing disabled in settings */}
-
-        {/* Gender */}
-        <View style={styles.settingItem}>
-          <View style={styles.settingRow}>
-            <View style={styles.settingInfo}>
-              <Text style={styles.settingLabel}>Gender</Text>
-              <Text style={styles.settingDescription}>Optional, choose what fits best</Text>
-            </View>
-            <View style={styles.chipRow}>
-              {['Female','Male','Non-binary','Prefer not to say'].map((g) => {
-                const selected = (user.gender || '') === g;
-                return (
-                  <TouchableOpacity
-                    key={g}
-                    style={[styles.chip, selected && styles.chipActive]}
-                    onPress={() => updateUser({ gender: selected ? '' : g })}
-                    activeOpacity={0.8}
-                  >
-                    <Text style={[styles.chipText, { color: selected ? 'white' : colors.text }]}>{g}</Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          </View>
-        </View>
-
-        {/* Height / Weight per unit preference */}
-        <View style={styles.settingItem}>
-          <View style={styles.settingRow}>
-            <View style={styles.settingInfo}>
-              <Text style={styles.settingLabel}>Height ({(user.unitSystem || 'metric') === 'imperial' ? 'ft/in' : 'cm'})</Text>
-              <Text style={styles.settingDescription}>Optional</Text>
-            </View>
-            { (user.unitSystem || 'metric') === 'imperial' ? (
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                <View style={{ width: 100 }}>
-                  <Picker
-                    selectedValue={(() => { const inches = user.heightCm ? Math.round(user.heightCm / 2.54) : 66; return String(Math.floor(inches / 12)); })()}
-                    onValueChange={(ft) => {
-                      const inches = user.heightCm ? Math.round(user.heightCm / 2.54) : 66;
-                      const newInches = parseInt(ft as string, 10) * 12 + (inches % 12);
-                      updateUser({ heightCm: Math.round(newInches * 2.54) });
-                    }}
-                    itemStyle={{ color: colors.text }}
-                  >
-                    {Array.from({ length: 6 }).map((_, i) => {
-                      const val = 3 + i; // 3..8
-                      return <Picker.Item key={val} label={`${val} ft`} value={String(val)} />
-                    })}
-                  </Picker>
-                </View>
-                <View style={{ width: 100 }}>
-                  <Picker
-                    selectedValue={(() => { const inches = user.heightCm ? Math.round(user.heightCm / 2.54) : 66; return String(inches % 12); })()}
-                    onValueChange={(inch) => {
-                      const inches = user.heightCm ? Math.round(user.heightCm / 2.54) : 66;
-                      const newInches = Math.floor(inches / 12) * 12 + parseInt(inch as string, 10);
-                      updateUser({ heightCm: Math.round(newInches * 2.54) });
-                    }}
-                    itemStyle={{ color: colors.text }}
-                  >
-                    {Array.from({ length: 12 }).map((_, i) => (
-                      <Picker.Item key={i} label={`${i} in`} value={String(i)} />
-                    ))}
-                  </Picker>
-                </View>
-              </View>
-            ) : (
-              <View style={{ width: 140 }}>
-                <Picker
-                  selectedValue={user.heightCm != null ? String(user.heightCm) : '170'}
-                  onValueChange={(v) => updateUser({ heightCm: parseInt(String(v), 10) })}
-                  itemStyle={{ color: colors.text }}
-                >
-                  {Array.from({ length: 201 }).map((_, i) => {
-                    const val = 50 + i;
-                    return <Picker.Item key={val} label={`${val} cm`} value={String(val)} />
-                  })}
-                </Picker>
-              </View>
-            )}
-          </View>
-        </View>
-
-        {/* Weight */}
-        <View style={[styles.settingItem, styles.settingItemLast]}>
-          <View style={styles.settingRow}>
-            <View style={styles.settingInfo}>
-              <Text style={styles.settingLabel}>Weight ({(user.unitSystem || 'metric') === 'imperial' ? 'lb' : 'kg'})</Text>
-              <Text style={styles.settingDescription}>Optional</Text>
-            </View>
-            { (user.unitSystem || 'metric') === 'imperial' ? (
-              <Text style={[styles.settingLabel, { minWidth: 80, textAlign: 'right' }]}>
-                {user.weightKg ? `${Math.round(user.weightKg * 2.20462)} lb` : '—'}
-              </Text>
-            ) : (
-              <TextInput
-                style={[styles.textInput, styles.smallInput]}
-                keyboardType="number-pad"
-                placeholder="e.g. 70"
-                placeholderTextColor={colors.textMuted}
-                value={user.weightKg != null ? String(user.weightKg) : ''}
-                onChangeText={(t) => {
-                  const v = t.replace(/[^0-9]/g, '');
-                  const num = v ? Math.max(20, Math.min(500, parseInt(v, 10))) : undefined;
-                  updateUser({ weightKg: num as any });
-                }}
-              />
-            )}
-          </View>
-        </View>
-
-        <Text style={{ fontSize: 12, color: colors.textSecondary, textAlign: 'center', marginTop: 8 }}>
-          This information is optional and used only to personalize your plan. It’s private, anonymous, and will never be sold.
-        </Text>
-      </View>
+      {/* Personalization moved into Edit Profile modal (entry in Account section only) */}
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Notifications</Text>
@@ -1244,25 +1304,25 @@ export default function SettingsScreen() {
       </Animated.ScrollView>
 
       {/* Privacy Policy Modal */}
-      <Modal
+      <ModalWrapper
         visible={privacyModalVisible}
         animationType="slide"
-        transparent={true}
+        transparent
         onRequestClose={() => setPrivacyModalVisible(false)}
+        overlayStyle={styles.modalOverlay}
+        containerStyle={[styles.modalContainer, { backgroundColor: colors.background }]}
       >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContainer, { backgroundColor: colors.background }]}> 
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Privacy Policy</Text>
-              <TouchableOpacity
-                style={styles.closeButton}
-                onPress={() => setPrivacyModalVisible(false)}
-                activeOpacity={0.7}
-              >
-                <X size={20} color={colors.text} />
-              </TouchableOpacity>
-            </View>
-            <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={false}>
+        <View style={styles.modalHeader}>
+          <Text style={styles.modalTitle}>Privacy Policy</Text>
+          <TouchableOpacity
+            style={styles.closeButton}
+            onPress={() => setPrivacyModalVisible(false)}
+            activeOpacity={0.7}
+          >
+            <X size={20} color={colors.text} />
+          </TouchableOpacity>
+        </View>
+        <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={false}>
               <Text style={styles.modalLastUpdated}>Last updated: October 25, 2025</Text>
 
               <Text style={[styles.modalSectionTitle, styles.modalFirstSectionTitle]}>PRIVACY POLICY</Text>
@@ -1342,31 +1402,29 @@ export default function SettingsScreen() {
 
               <Text style={styles.modalSectionTitle}>13. HOW TO REVIEW, UPDATE, OR DELETE YOUR DATA</Text>
               <Text style={styles.modalParagraph}>You may request access, correction, deletion, or portability of your data. Send a data subject access request (DSAR) to app.momentum.mobile@gmail.com.</Text>
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
+        </ScrollView>
+      </ModalWrapper>
 
       {/* Terms & Conditions Modal */}
-      <Modal
+      <ModalWrapper
         visible={termsModalVisible}
         animationType="slide"
-        transparent={true}
+        transparent
         onRequestClose={() => setTermsModalVisible(false)}
+        overlayStyle={styles.modalOverlay}
+        containerStyle={[styles.modalContainer, { backgroundColor: colors.background }]}
       >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContainer, { backgroundColor: colors.background }]}> 
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Terms & Conditions</Text>
-              <TouchableOpacity
-                style={styles.closeButton}
-                onPress={() => setTermsModalVisible(false)}
-                activeOpacity={0.7}
-              >
-                <X size={20} color={colors.text} />
-              </TouchableOpacity>
-            </View>
-            <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={false}>
+        <View style={styles.modalHeader}>
+          <Text style={styles.modalTitle}>Terms & Conditions</Text>
+          <TouchableOpacity
+            style={styles.closeButton}
+            onPress={() => setTermsModalVisible(false)}
+            activeOpacity={0.7}
+          >
+            <X size={20} color={colors.text} />
+          </TouchableOpacity>
+        </View>
+        <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={false}>
               <Text style={styles.modalLastUpdated}>Last updated: October 25, 2025</Text>
 
               <Text style={[styles.modalSectionTitle, styles.modalFirstSectionTitle]}>⚠️ IMPORTANT NOTICE - USE AT YOUR OWN RISK</Text>
@@ -1487,91 +1545,261 @@ export default function SettingsScreen() {
               <Text style={styles.modalParagraph}>United States</Text>
               <Text style={styles.modalParagraph}>Phone: 949-533-8013</Text>
               <Text style={styles.modalParagraph}>Email: app.momentum.mobile@gmail.com</Text>
-            </ScrollView>
-          </View>
+        </ScrollView>
+      </ModalWrapper>
+
+      {/* Account Edit Modal */}
+      <ModalWrapper
+        visible={accountModalVisible}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setAccountModalVisible(false)}
+        overlayStyle={styles.modalOverlay}
+        containerStyle={[styles.modalContainer, styles.accountModalContainer]}
+      >
+        <LinearGradient
+          colors={[colors.primary, colors.primaryLight]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.modalAccentBar}
+        />
+        <View style={[styles.modalHeader, styles.modalHeaderElevated]}>
+          <Text style={styles.modalTitle}>Edit Profile</Text>
+          <TouchableOpacity
+            style={styles.closeButton}
+            onPress={async () => { 
+              if (Platform.OS !== 'web') { await Haptics.selectionAsync(); }
+              setAccountModalVisible(false); 
+            }}
+            activeOpacity={0.7}
+          >
+            <X size={20} color={colors.text} />
+          </TouchableOpacity>
         </View>
-      </Modal>
+        <ScrollView
+          style={[styles.modalContent, styles.accountModalScroll]}
+          contentContainerStyle={styles.accountModalContent}
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.fieldGroup}>
+            <Text style={[styles.settingLabel, { color: colors.text }]}>Full Name</Text>
+            <TextInput
+              style={[styles.textInput, styles.modalTextInput]}
+              value={draftName}
+              onChangeText={setDraftName}
+              placeholder="Enter name"
+              placeholderTextColor={colors.textMuted}
+            />
+          </View>
+          <View style={styles.fieldGroup}>
+            <Text style={[styles.settingLabel, { color: colors.text }]}>Username</Text>
+            <TextInput
+              style={[styles.textInput, styles.modalTextInput]}
+              value={draftUsername}
+              onChangeText={setDraftUsername}
+              placeholder="Enter username"
+              placeholderTextColor={colors.textMuted}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+          </View>
+          <View style={styles.fieldGroup}>
+            <Text style={[styles.settingLabel, { color: colors.text }]}>Date of Birth</Text>
+            <TouchableOpacity 
+              style={styles.modalFieldButton}
+              activeOpacity={0.7}
+              onPress={() => setShowProfileDobPicker(true)}
+            >
+              <Calendar size={18} color={colors.text} />
+              <Text style={styles.modalFieldButtonText}>{draftDob || 'Select date'}</Text>
+            </TouchableOpacity>
+            {showProfileDobPicker && (
+              <DateTimePicker
+                value={(() => {
+                  if (draftDob) { const p = draftDob.split('-').map(Number); return new Date(p[0], p[1]-1, p[2]); }
+                  return new Date(1995, 0, 1);
+                })()}
+                mode="date"
+                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                onChange={(e, d) => {
+                  if (Platform.OS !== 'ios') setShowProfileDobPicker(false);
+                  if (d) {
+                    const y = d.getFullYear(); const m = String(d.getMonth()+1).padStart(2,'0'); const day = String(d.getDate()).padStart(2,'0');
+                    setDraftDob(`${y}-${m}-${day}`);
+                  }
+                }}
+              />
+            )}
+          </View>
+          <View style={styles.fieldGroup}>
+            <Text style={[styles.settingLabel, { color: colors.text }]}>Gender</Text>
+            <View style={[styles.chipRow, { justifyContent: 'flex-start' }]}>
+              {['Female','Male','Non-binary','Prefer not to say'].map((g) => {
+                const selected = draftGender === g;
+                return (
+                  <TouchableOpacity
+                    key={g}
+                    style={[styles.chip, selected && styles.chipActive]}
+                    onPress={async () => { if (Platform.OS !== 'web') { await Haptics.selectionAsync(); } setDraftGender(selected ? '' : g); }}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={[styles.chipText, { color: selected ? 'white' : colors.text }]}>{g}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+          {(user.unitSystem || 'metric') === 'imperial' ? (
+            <View style={styles.fieldGroup}>
+              <Text style={[styles.settingLabel, { color: colors.text }]}>Height (ft/in)</Text>
+              <View style={styles.inputRow}>
+                <TextInput
+                  style={[styles.textInput, styles.modalTextInput, styles.splitInput]}
+                  keyboardType="number-pad"
+                  placeholder="ft"
+                  placeholderTextColor={colors.textMuted}
+                  value={draftHeightFt}
+                  onChangeText={(t) => setDraftHeightFt(t.replace(/[^0-9]/g, ''))}
+                />
+                <TextInput
+                  style={[styles.textInput, styles.modalTextInput, styles.splitInput]}
+                  keyboardType="number-pad"
+                  placeholder="in"
+                  placeholderTextColor={colors.textMuted}
+                  value={draftHeightIn}
+                  onChangeText={(t) => setDraftHeightIn(t.replace(/[^0-9]/g, ''))}
+                />
+              </View>
+              <Text style={[styles.settingLabel, { marginTop: 6, color: colors.text }]}>Weight (lb)</Text>
+              <TextInput
+                style={[styles.textInput, styles.modalTextInput, styles.splitInput]}
+                keyboardType="number-pad"
+                placeholder="e.g. 160"
+                placeholderTextColor={colors.textMuted}
+                value={draftWeightLb}
+                onChangeText={(t) => setDraftWeightLb(t.replace(/[^0-9]/g, ''))}
+              />
+            </View>
+          ) : (
+            <View style={styles.fieldGroup}>
+              <Text style={[styles.settingLabel, { color: colors.text }]}>Height (cm)</Text>
+              <TextInput
+                style={[styles.textInput, styles.modalTextInput, styles.splitInput]}
+                keyboardType="number-pad"
+                placeholder="e.g. 170"
+                placeholderTextColor={colors.textMuted}
+                value={draftHeightCm}
+                onChangeText={(t) => setDraftHeightCm(t.replace(/[^0-9]/g, ''))}
+              />
+              <Text style={[styles.settingLabel, { marginTop: 6, color: colors.text }]}>Weight (kg)</Text>
+              <TextInput
+                style={[styles.textInput, styles.modalTextInput, styles.splitInput]}
+                keyboardType="number-pad"
+                placeholder="e.g. 70"
+                placeholderTextColor={colors.textMuted}
+                value={draftWeightKg}
+                onChangeText={(t) => setDraftWeightKg(t.replace(/[^0-9]/g, ''))}
+              />
+            </View>
+          )}
+        </ScrollView>
+        <View style={styles.modalFooter}>
+          <TouchableOpacity 
+            style={styles.secondaryButton}
+            onPress={() => setAccountModalVisible(false)}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.secondaryButtonText}>Cancel</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.primaryButton}
+            onPress={handleSaveAccount}
+            activeOpacity={0.85}
+          >
+            <Save size={18} color={colors.background} />
+            <Text style={styles.primaryButtonText}>Save Changes</Text>
+          </TouchableOpacity>
+        </View>
+      </ModalWrapper>
 
       {/* Change Password Modal */}
-      <Modal
+      <ModalWrapper
         visible={changePasswordModalVisible}
         animationType="slide"
-        transparent={true}
+        transparent
         onRequestClose={() => setChangePasswordModalVisible(false)}
+        overlayStyle={styles.modalOverlay}
+        containerStyle={styles.modalContainer}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContainer}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Change Password</Text>
-              <TouchableOpacity
-                style={styles.closeButton}
-                onPress={() => setChangePasswordModalVisible(false)}
-                activeOpacity={0.7}
-              >
-                <X size={20} color={colors.text} />
-              </TouchableOpacity>
-            </View>
-            <View style={styles.modalContent}>
-              <View style={styles.settingItem}>
-                <Text style={styles.settingLabel}>Current Password</Text>
-                <TextInput
-                  style={styles.textInput}
-                  value={currentPassword}
-                  onChangeText={setCurrentPassword}
-                  placeholder="Enter current password"
-                  placeholderTextColor={colors.textMuted}
-                  secureTextEntry
-                  autoCapitalize="none"
-                />
-              </View>
-              
-              <View style={styles.settingItem}>
-                <Text style={styles.settingLabel}>New Password</Text>
-                <TextInput
-                  style={styles.textInput}
-                  value={newPassword}
-                  onChangeText={setNewPassword}
-                  placeholder="Enter new password"
-                  placeholderTextColor={colors.textMuted}
-                  secureTextEntry
-                  autoCapitalize="none"
-                />
-              </View>
-              
-              <View style={styles.settingItem}>
-                <Text style={styles.settingLabel}>Confirm New Password</Text>
-                <TextInput
-                  style={styles.textInput}
-                  value={confirmPassword}
-                  onChangeText={setConfirmPassword}
-                  placeholder="Confirm new password"
-                  placeholderTextColor={colors.textMuted}
-                  secureTextEntry
-                  autoCapitalize="none"
-                />
-              </View>
-              
-              <TouchableOpacity
-                style={[styles.actionButton, { backgroundColor: colors.primary, marginTop: 20 }]}
-                onPress={handlePasswordChange}
-                disabled={passwordLoading}
-                activeOpacity={0.7}
-              >
-                {passwordLoading ? (
-                  <ActivityIndicator size="small" color="white" />
-                ) : (
-                  <>
-                    <Lock size={16} color="white" />
-                    <Text style={[styles.actionButtonText, { color: 'white' }]}>
-                      Update Password
-                    </Text>
-                  </>
-                )}
-              </TouchableOpacity>
-            </View>
-          </View>
+        <View style={styles.modalHeader}>
+          <Text style={styles.modalTitle}>Change Password</Text>
+          <TouchableOpacity
+            style={styles.closeButton}
+            onPress={() => setChangePasswordModalVisible(false)}
+            activeOpacity={0.7}
+          >
+            <X size={20} color={colors.text} />
+          </TouchableOpacity>
         </View>
-      </Modal>
+        <View style={styles.modalContent}>
+          <View style={styles.settingItem}>
+            <Text style={styles.settingLabel}>Current Password</Text>
+            <TextInput
+              style={styles.textInput}
+              value={currentPassword}
+              onChangeText={setCurrentPassword}
+              placeholder="Enter current password"
+              placeholderTextColor={colors.textMuted}
+              secureTextEntry
+              autoCapitalize="none"
+            />
+          </View>
+          
+          <View style={styles.settingItem}>
+            <Text style={styles.settingLabel}>New Password</Text>
+            <TextInput
+              style={styles.textInput}
+              value={newPassword}
+              onChangeText={setNewPassword}
+              placeholder="Enter new password"
+              placeholderTextColor={colors.textMuted}
+              secureTextEntry
+              autoCapitalize="none"
+            />
+          </View>
+          
+          <View style={styles.settingItem}>
+            <Text style={styles.settingLabel}>Confirm New Password</Text>
+            <TextInput
+              style={styles.textInput}
+              value={confirmPassword}
+              onChangeText={setConfirmPassword}
+              placeholder="Confirm new password"
+              placeholderTextColor={colors.textMuted}
+              secureTextEntry
+              autoCapitalize="none"
+            />
+          </View>
+          
+          <TouchableOpacity
+            style={[styles.actionButton, { backgroundColor: colors.primary, marginTop: 20 }]}
+            onPress={handlePasswordChange}
+            disabled={passwordLoading}
+            activeOpacity={0.7}
+          >
+            {passwordLoading ? (
+              <ActivityIndicator size="small" color="white" />
+            ) : (
+              <>
+                <Lock size={16} color="white" />
+                <Text style={[styles.actionButtonText, { color: 'white' }]}>
+                  Update Password
+                </Text>
+              </>
+            )}
+          </TouchableOpacity>
+        </View>
+      </ModalWrapper>
 
       {/* Subscription Management Modal */}
       <SubscriptionManagementModal
