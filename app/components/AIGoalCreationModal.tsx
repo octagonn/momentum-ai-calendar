@@ -18,11 +18,13 @@ import { useTheme } from '../../providers/ThemeProvider';
 import { useAuth } from '../../providers/AuthProvider';
 import { useUser } from '../../providers/UserProvider';
 import { useSubscription } from '../../providers/SubscriptionProvider';
+import { useNotifications } from '../../providers/NotificationProvider';
 import { aiService } from '../../lib/ai-service';
 import { ensureUserProfile } from '../../services/goalPlanning';
 import { notificationService } from '../../services/notifications';
 import { supabase } from '../../lib/supabase-client';
 import { featureGate, Feature } from '../../services/featureGate';
+import { shadowSm, shadowMd, insetTopLight, insetBottomDark } from '@/ui/depth';
 
 interface Message {
   id: string;
@@ -42,6 +44,7 @@ export default function AIGoalCreationModal({ visible, onClose, onGoalCreated }:
   const { user } = useAuth();
   const { user: userProfile } = useUser();
   const { isPremium, showUpgradeModal } = useSubscription();
+  const { preferences: notificationPreferences } = useNotifications();
   const insets = useSafeAreaInsets();
   const scrollViewRef = useRef<ScrollView>(null);
   
@@ -141,8 +144,15 @@ export default function AIGoalCreationModal({ visible, onClose, onGoalCreated }:
         content: userMessage
       });
 
-      // Call AI service to get response
-      const response = await aiService.generateResponse(conversationHistory);
+      // Call AI service to get response with optional onboarding context
+      const response = await aiService.generateResponse(conversationHistory, {
+        age: userProfile?.age ?? null,
+        gender: userProfile?.gender ?? null,
+        heightCm: userProfile?.heightCm ?? null,
+        weightKg: userProfile?.weightKg ?? null,
+        unitSystem: userProfile?.unitSystem ?? null,
+        dateOfBirth: userProfile?.dateOfBirth ?? null,
+      });
       
       if (response.success && response.message) {
         addMessage('assistant', response.message);
@@ -178,8 +188,15 @@ export default function AIGoalCreationModal({ visible, onClose, onGoalCreated }:
       // Ensure user profile exists
       await ensureUserProfile(supabase, user.id);
 
-      // Call the AI service to create the goal plan from the conversation
-      const planResponse = await aiService.createGoalFromConversation(conversationHistory);
+      // Call the AI service to create the goal plan from the conversation with optional onboarding context
+      const planResponse = await aiService.createGoalFromConversation(conversationHistory, {
+        age: userProfile?.age ?? null,
+        gender: userProfile?.gender ?? null,
+        heightCm: userProfile?.heightCm ?? null,
+        weightKg: userProfile?.weightKg ?? null,
+        unitSystem: userProfile?.unitSystem ?? null,
+        dateOfBirth: userProfile?.dateOfBirth ?? null,
+      });
       
       if (planResponse.success && planResponse.goal && planResponse.tasks) {
         // The database function will automatically assign a color if not provided
@@ -196,7 +213,9 @@ export default function AIGoalCreationModal({ visible, onClose, onGoalCreated }:
 
         // Schedule notifications for the tasks
         try {
-          await notificationService.scheduleMultipleTaskNotifications(planResponse.tasks);
+          // Get user's reminder preference from notification settings
+          const reminderMinutes = notificationPreferences.taskReminderMinutes || 15;
+          await notificationService.scheduleMultipleTaskNotifications(planResponse.tasks, reminderMinutes);
         } catch (notificationError) {
           console.warn('Failed to schedule notifications:', notificationError);
         }
@@ -241,8 +260,13 @@ export default function AIGoalCreationModal({ visible, onClose, onGoalCreated }:
             <Bot size={16} color={colors.background} />
           </View>
         )}
-        <View style={[styles.messageBubble, isUser ? styles.userBubble : styles.assistantBubble]}>
-          <Text style={[styles.messageText, isUser ? styles.userText : styles.assistantText]}>
+        <View style={[
+          styles.messageBubble,
+          isUser
+            ? [styles.userBubble, { backgroundColor: colors.primary }, shadowMd(isDark)]
+            : [styles.assistantBubble, { backgroundColor: colors.card }, shadowSm(isDark)]
+        ]}>
+          <Text style={[styles.messageText, { color: isUser ? 'white' : colors.text }]}>
             {message.content}
           </Text>
           <Text style={[styles.timestamp, isUser ? styles.userTimestamp : styles.assistantTimestamp]}>
@@ -265,7 +289,7 @@ export default function AIGoalCreationModal({ visible, onClose, onGoalCreated }:
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
         {/* Header */}
-        <View style={[styles.header, { borderBottomColor: colors.border }]}>
+        <View style={[styles.header, { borderBottomColor: colors.border, borderBottomWidth: 0 }]}>
           <Text style={[styles.headerTitle, { color: colors.text }]}>
             Create Goal with AI
           </Text>
@@ -355,11 +379,7 @@ export default function AIGoalCreationModal({ visible, onClose, onGoalCreated }:
         {/* Input */}
         <View style={[styles.inputContainer, { borderTopColor: colors.border }, isPremiumRequired && styles.hidden]}>
           <TextInput
-            style={[styles.textInput, { 
-              backgroundColor: colors.surface, 
-              color: colors.text,
-              borderColor: colors.border 
-            }]}
+            style={[styles.textInput, { backgroundColor: colors.card, color: colors.text, borderColor: 'transparent' }, shadowSm(isDark)]}
             value={inputText}
             onChangeText={setInputText}
             placeholder="Type your message..."
@@ -369,6 +389,8 @@ export default function AIGoalCreationModal({ visible, onClose, onGoalCreated }:
             editable={!isLoading && !isCreating}
             onSubmitEditing={handleKeyPress}
           />
+          <View pointerEvents="none" style={insetTopLight(colors as any, isDark, 0.08)} />
+          <View pointerEvents="none" style={insetBottomDark(colors as any, isDark, 0.08)} />
           <TouchableOpacity
             style={[
               styles.sendButton,
@@ -403,7 +425,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 20,
     paddingBottom: 15,
-    borderBottomWidth: 1,
+    borderBottomWidth: 0,
   },
   headerTitle: {
     fontSize: 18,
@@ -509,7 +531,7 @@ const styles = StyleSheet.create({
   },
   textInput: {
     flex: 1,
-    borderWidth: 1,
+    borderWidth: 0,
     borderRadius: 20,
     paddingHorizontal: 16,
     paddingVertical: 12,

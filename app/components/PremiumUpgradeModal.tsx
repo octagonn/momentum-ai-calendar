@@ -9,14 +9,17 @@ import {
   ActivityIndicator,
   Alert,
   Platform,
-  Linking,
+  ImageBackground,
 } from 'react-native';
-import { X, Crown, Check, Lock, Target, Palette, Bot, TrendingUp } from 'lucide-react-native';
+import { X, Check, Lock, Target, Palette, Bot, TrendingUp } from 'lucide-react-native';
+import { Image } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../providers/ThemeProvider';
+import { useSubscription } from '@/providers/SubscriptionProvider';
 import { useAuth } from '../../providers/AuthProvider';
 import { subscriptionService } from '../../services/subscriptionService';
 import { Subscription } from '../../lib/iap-wrapper';
+import { shadowSm, insetTopLight, insetBottomDark } from '@/ui/depth';
 
 interface PremiumUpgradeModalProps {
   visible: boolean;
@@ -31,7 +34,8 @@ export default function PremiumUpgradeModal({
   onSuccess,
   trigger = 'general' 
 }: PremiumUpgradeModalProps) {
-  const { colors, isDark } = useTheme();
+  const { colors, isDark, isGalaxy } = useTheme();
+  const { showUpgradeModal } = useSubscription();
   const { user } = useAuth();
   const insets = useSafeAreaInsets();
   
@@ -61,16 +65,16 @@ export default function PremiumUpgradeModal({
   };
   
   const handlePurchase = async () => {
-    if (!selected) {
-      Alert.alert('Error', 'Please select a subscription plan');
-      return;
-    }
-    
+    // Proceed even if no plan is pre-selected; service will fall back to default SKU
     console.log('PremiumUpgradeModal: Starting purchase process...');
     setLoading(true);
     try {
-      console.log('PremiumUpgradeModal: Calling subscriptionService.purchaseSubscription()');
-      const success = await subscriptionService.purchaseSubscription();
+      // Ensure IAP is initialized and listeners are attached before requesting purchase
+      if (user?.id) {
+        await subscriptionService.initialize(user.id);
+      }
+      console.log('PremiumUpgradeModal: Calling subscriptionService.purchaseSubscription() with SKU:', selected);
+      const success = await subscriptionService.purchaseSubscription(selected || undefined);
       console.log('PremiumUpgradeModal: Purchase result:', success);
       
       if (success) {
@@ -83,11 +87,41 @@ export default function PremiumUpgradeModal({
           }}]
         );
       } else {
-        Alert.alert('Purchase Failed', 'The subscription could not be completed. Please try again.');
+        Alert.alert(
+          'Purchase Failed', 
+          'The subscription could not be completed. Please try again.',
+          [{ text: 'OK' }]
+        );
       }
     } catch (error) {
       console.error('PremiumUpgradeModal: Purchase error:', error);
-      Alert.alert('Purchase Error', 'An error occurred during the purchase process. Please try again.');
+      // Provide more specific error messages based on the error type
+      let errorMessage = 'An error occurred during the purchase process. Please try again.';
+      
+      if (error && typeof error === 'object') {
+        if (error.message) {
+          errorMessage = error.message;
+        } else if (error.code) {
+          switch (error.code) {
+            case 'E_USER_CANCELLED':
+              errorMessage = 'Purchase was cancelled.';
+              break;
+            case 'E_ITEM_UNAVAILABLE':
+              errorMessage = 'This subscription is not available. Please try again later.';
+              break;
+            case 'E_NETWORK_ERROR':
+              errorMessage = 'Network error. Please check your connection and try again.';
+              break;
+            case 'E_SERVICE_ERROR':
+              errorMessage = 'Service temporarily unavailable. Please try again later.';
+              break;
+            default:
+              errorMessage = `Purchase failed: ${error.code}`;
+          }
+        }
+      }
+      
+      Alert.alert('Purchase Error', errorMessage, [{ text: 'OK' }]);
     } finally {
       setLoading(false);
     }
@@ -154,7 +188,14 @@ export default function PremiumUpgradeModal({
       presentationStyle="pageSheet"
       onRequestClose={onClose}
     >
-      <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <View style={[styles.container, { backgroundColor: isGalaxy ? 'rgba(0, 0, 0, 0.5)' : colors.background }]}> 
+        {isGalaxy && (
+          <ImageBackground 
+            source={require('@/assets/images/background.png')} 
+            style={StyleSheet.absoluteFillObject} 
+            resizeMode="cover"
+          />
+        )}
         {/* Header */}
         <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
           <TouchableOpacity onPress={onClose} style={styles.closeButton}>
@@ -170,7 +211,11 @@ export default function PremiumUpgradeModal({
           {/* Icon and Title */}
           <View style={styles.titleSection}>
             <View style={[styles.iconContainer, { backgroundColor: colors.primary }]}>
-              <Crown size={48} color={colors.background} />
+              <Image
+                source={require('@/assets/images/premium-icon-2.png')}
+                style={{ width: 96, height: 96 }}
+                resizeMode="contain"
+              />
             </View>
             <Text style={[styles.title, { color: colors.text }]}>{title}</Text>
             <Text style={[styles.subtitle, { color: colors.textSecondary }]}>{subtitle}</Text>
@@ -210,12 +255,11 @@ export default function PremiumUpgradeModal({
                   style={[
                     styles.pricingOption,
                     { 
-                      backgroundColor: colors.surface,
-                      borderColor: selected === p.productId 
-                        ? colors.primary 
-                        : colors.border,
-                      borderWidth: selected === p.productId ? 2 : 1,
+                      backgroundColor: colors.card,
+                      borderColor: selected === p.productId ? colors.primary : 'transparent',
+                      borderWidth: selected === p.productId ? 2 : 0,
                     }
+                    , shadowSm(isDark)
                   ]}
                   onPress={() => setSelected(p.productId)}
                   disabled={loading}
@@ -240,6 +284,8 @@ export default function PremiumUpgradeModal({
                       {p.description}
                     </Text>
                   )}
+                  <View pointerEvents="none" style={insetTopLight(colors as any, isDark, 0.06)} />
+                  <View pointerEvents="none" style={insetBottomDark(colors as any, isDark, 0.06)} />
                 </TouchableOpacity>
               ))}
             </View>
@@ -254,7 +300,7 @@ export default function PremiumUpgradeModal({
                 loading && styles.disabledButton
               ]}
               onPress={handlePurchase}
-              disabled={loading || !selected}
+            disabled={loading}
             >
               {loading ? (
                 <ActivityIndicator size="small" color={colors.background} />
@@ -268,7 +314,7 @@ export default function PremiumUpgradeModal({
             <TouchableOpacity
               style={styles.restoreButton}
               onPress={handleRestore}
-              disabled={loading}
+            disabled={loading}
             >
               <Text style={[styles.restoreButtonText, { color: colors.primary }]}>
                 Restore Purchases
@@ -278,18 +324,33 @@ export default function PremiumUpgradeModal({
           
           {/* Terms */}
           <View style={styles.termsSection}>
-            <Text style={[styles.termsText, { color: colors.textSecondary }]}>
+            <Text style={[styles.termsText, { color: colors.textSecondary }]}> 
               By subscribing, you agree to our{' '}
               <Text 
                 style={{ color: colors.primary }}
-                onPress={() => Linking.openURL('https://yourapp.com/terms')}
+                onPress={() => {
+                  // Navigate to Settings screen where Terms modal exists
+                  try {
+                    const { router } = require('expo-router');
+                    router.push('/(tabs)/settings');
+                  } catch {
+                    Alert.alert('Where to find Terms', 'Open Settings > Legal & Privacy to view the Terms.');
+                  }
+                }}
               >
                 Terms of Service
               </Text>
               {' '}and{' '}
               <Text 
                 style={{ color: colors.primary }}
-                onPress={() => Linking.openURL('https://yourapp.com/privacy')}
+                onPress={() => {
+                  try {
+                    const { router } = require('expo-router');
+                    router.push('/(tabs)/settings');
+                  } catch {
+                    Alert.alert('Where to find Privacy Policy', 'Open Settings > Legal & Privacy to view the Privacy Policy.');
+                  }
+                }}
               >
                 Privacy Policy
               </Text>

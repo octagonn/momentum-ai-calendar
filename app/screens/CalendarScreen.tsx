@@ -23,6 +23,7 @@ import { useTheme } from '../../providers/ThemeProvider';
 import { useAuth } from '../../providers/AuthProvider';
 import { supabase, createNewSupabaseClient } from '../../lib/supabase-client';
 import GoalModal from '../components/GoalModal';
+import { shadowSm } from '@/ui/depth';
 
 interface Task {
   id: string;
@@ -69,6 +70,7 @@ export default function CalendarScreen() {
   const [currentDate, setCurrentDate] = useState<Date>(new Date());
   const [showMonthView, setShowMonthView] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [realtimeRefreshKey, setRealtimeRefreshKey] = useState(0);
   
   // Animation values for swipe gestures
   const translateX = useRef(new Animated.Value(0)).current;
@@ -145,6 +147,44 @@ export default function CalendarScreen() {
 
       if (error) {
         console.error('Error fetching tasks:', error);
+        // Retry once on auth/RLS errors after session refresh
+        if ((error as any)?.code === '42501' || (error as any)?.message?.includes('JWT') || (error as any)?.message?.includes('permission denied') || (error as any)?.message?.includes('Unauthorized')) {
+          try {
+            await supabase.auth.refreshSession();
+            let retry = await supabase
+              .from('tasks')
+              .select(`
+                *,
+                goal:goals(id, title, description, color)
+              `)
+              .eq('user_id', user.id)
+              .order('due_at', { ascending: true });
+            if (retry.error && (retry.error.message.includes('color') || retry.error.message.includes('column') || retry.error.message.includes('schema'))) {
+              retry = await supabase
+                .from('tasks')
+                .select(`
+                  *,
+                  goal:goals(id, title, description)
+                `)
+                .eq('user_id', user.id)
+                .order('due_at', { ascending: true });
+              if (retry.data) {
+                retry.data = retry.data.map((task: any) => ({
+                  ...task,
+                  goal: task.goal ? { ...task.goal, color: '#3B82F6' } : task.goal
+                }));
+              }
+            }
+            if (retry.error) {
+              console.error('Retry error fetching tasks:', retry.error);
+              return;
+            }
+            setTasks(retry.data || []);
+            return;
+          } catch (e) {
+            console.warn('Task fetch retry after refresh failed:', e);
+          }
+        }
         return;
       }
 
@@ -167,6 +207,25 @@ export default function CalendarScreen() {
 
       if (error) {
         console.error('Error fetching goals:', error);
+        if ((error as any)?.code === '42501' || (error as any)?.message?.includes('JWT') || (error as any)?.message?.includes('permission denied') || (error as any)?.message?.includes('Unauthorized')) {
+          try {
+            await supabase.auth.refreshSession();
+            const retry = await supabase
+              .from('goals')
+              .select('*')
+              .eq('user_id', user.id)
+              .eq('status', 'active')
+              .order('created_at', { ascending: false });
+            if (retry.error) {
+              console.error('Retry error fetching goals:', retry.error);
+              return;
+            }
+            setGoals(retry.data || []);
+            return;
+          } catch (e) {
+            console.warn('Goal fetch retry after refresh failed:', e);
+          }
+        }
         return;
       }
 
@@ -294,15 +353,16 @@ export default function CalendarScreen() {
       tasksSubscription.unsubscribe();
       goalsSubscription.unsubscribe();
     };
-  }, [user, fetchTasks, fetchGoals]);
+  }, [user, fetchTasks, fetchGoals, realtimeRefreshKey]);
 
   // Refresh data when app comes back to foreground
   useEffect(() => {
     const handleAppStateChange = (nextAppState: string) => {
       if (nextAppState === 'active' && user) {
-        // App has come to the foreground, refresh data
-        fetchGoals();
-        fetchTasks();
+        console.log('CalendarScreen: App became active - refreshing data and realtime');
+        Promise.all([fetchGoals(), fetchTasks()]).catch(() => {});
+        // Reinitialize realtime listeners to avoid stale connections
+        setRealtimeRefreshKey((k) => k + 1);
       }
     };
 
@@ -903,7 +963,7 @@ export default function CalendarScreen() {
           onGestureEvent={onGestureEvent}
           onHandlerStateChange={onHandlerStateChange}
         >
-          <View style={styles.weekContainer}>
+          <View style={[styles.weekContainer, { backgroundColor: isGalaxy ? 'transparent' : colors.card }, shadowSm(isDark)]}>
             {/* Days of the week */}
             <View style={styles.daysHeader}>
               {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day, index) => (
@@ -944,6 +1004,7 @@ export default function CalendarScreen() {
                         <View style={[
                           styles.dateCircle,
                           isSelected && { backgroundColor: colors.primary },
+                          isSelected && shadowSm(isDark),
                           !isCurrentMonth && styles.dateCircleInactive
                         ]}>
                           <Text style={[
@@ -1005,9 +1066,10 @@ export default function CalendarScreen() {
                           onPress={() => setSelectedDate(dateString)}
                           activeOpacity={0.7}
                         >
-                          <View style={[
+                        <View style={[
                             styles.dateCircle,
                             isSelected && { backgroundColor: colors.primary },
+                            isSelected && shadowSm(isDark),
                             !isCurrentMonth && styles.dateCircleInactive
                           ]}>
                             <Text style={[
@@ -1089,6 +1151,7 @@ export default function CalendarScreen() {
                       >
                         <View style={[
                           styles.dateCircle,
+                          { backgroundColor: colors.card },
                           isSelected && { backgroundColor: colors.primary },
                           !isCurrentMonth && styles.dateCircleInactive
                         ]}>
@@ -1159,10 +1222,8 @@ export default function CalendarScreen() {
                   key={task.id}
                   style={[
                     styles.eventCard,
-                    { 
-                      backgroundColor: colors.card,
-                      borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)',
-                    }
+                    { backgroundColor: colors.card },
+                    shadowSm(isDark),
                   ]}
                   onPress={() => handleTaskToggle(task)}
                   activeOpacity={0.7}
@@ -1349,7 +1410,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 16,
     borderRadius: 8,
-    borderWidth: 1,
+    borderWidth: 0,
     marginBottom: 8,
     backgroundColor: 'rgba(255, 255, 255, 0.1)',
   },

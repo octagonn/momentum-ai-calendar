@@ -1,21 +1,21 @@
 // Color palette for goal assignment
 export const GOAL_COLORS = [
-  '#3B82F6', // Blue
-  '#10B981', // Emerald
-  '#F59E0B', // Amber
-  '#EF4444', // Red
+  '#A855F7', // Purple (brand)
+  '#C084FC', // Purple Light
   '#8B5CF6', // Violet
-  '#06B6D4', // Cyan
-  '#84CC16', // Lime
-  '#F97316', // Orange
   '#EC4899', // Pink
-  '#6B7280', // Gray
-  '#14B8A6', // Teal
-  '#F43F5E', // Rose
-  '#A855F7', // Purple
+  '#3B82F6', // Blue
   '#0EA5E9', // Sky
+  '#06B6D4', // Cyan
+  '#10B981', // Emerald
   '#22C55E', // Green
+  '#84CC16', // Lime
+  '#F59E0B', // Amber
   '#EAB308', // Yellow
+  '#F97316', // Orange
+  '#EF4444', // Red
+  '#F43F5E', // Rose
+  '#6B7280', // Gray
 ] as const;
 
 export type GoalColor = typeof GOAL_COLORS[number];
@@ -55,22 +55,22 @@ export function isValidGoalColor(color: string): boolean {
  */
 export function getColorName(color: string): string {
   const colorNames: Record<string, string> = {
-    '#3B82F6': 'Blue',
-    '#10B981': 'Emerald',
-    '#F59E0B': 'Amber',
-    '#EF4444': 'Red',
-    '#8B5CF6': 'Violet',
-    '#06B6D4': 'Cyan',
-    '#84CC16': 'Lime',
-    '#F97316': 'Orange',
-    '#EC4899': 'Pink',
-    '#6B7280': 'Gray',
-    '#14B8A6': 'Teal',
-    '#F43F5E': 'Rose',
     '#A855F7': 'Purple',
+    '#C084FC': 'Purple Light',
+    '#8B5CF6': 'Violet',
+    '#EC4899': 'Pink',
+    '#3B82F6': 'Blue',
     '#0EA5E9': 'Sky',
+    '#06B6D4': 'Cyan',
+    '#10B981': 'Emerald',
     '#22C55E': 'Green',
+    '#84CC16': 'Lime',
+    '#F59E0B': 'Amber',
     '#EAB308': 'Yellow',
+    '#F97316': 'Orange',
+    '#EF4444': 'Red',
+    '#F43F5E': 'Rose',
+    '#6B7280': 'Gray',
   };
   
   return colorNames[color] || 'Custom';
