@@ -25,6 +25,7 @@ import { notificationService } from '../../services/notifications';
 import { supabase } from '../../lib/supabase-client';
 import { featureGate, Feature } from '../../services/featureGate';
 import { shadowSm, shadowMd, insetTopLight, insetBottomDark } from '@/ui/depth';
+import { getEventsInRange } from '@/app/services/appleCalendar';
 
 interface Message {
   id: string;
@@ -188,43 +189,90 @@ export default function AIGoalCreationModal({ visible, onClose, onGoalCreated }:
       // Ensure user profile exists
       await ensureUserProfile(supabase, user.id);
 
-      // Call the AI service to create the goal plan from the conversation with optional onboarding context
-      const planResponse = await aiService.createGoalFromConversation(conversationHistory, {
-        age: userProfile?.age ?? null,
-        gender: userProfile?.gender ?? null,
-        heightCm: userProfile?.heightCm ?? null,
-        weightKg: userProfile?.weightKg ?? null,
-        unitSystem: userProfile?.unitSystem ?? null,
-        dateOfBirth: userProfile?.dateOfBirth ?? null,
-      });
+      // Try new planner_v2 pipeline behind SMART_SCHEDULING feature flag; fallback to legacy
+      let planResponse: any = null;
+      try {
+        const access = await featureGate.canAccessFeature(Feature.SMART_SCHEDULING, user.id);
+        if (access.hasAccess) {
+          const supaUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || '';
+          const projectRef = supaUrl.replace('https://','').split('.')[0];
+          const base = `https://${projectRef}.functions.supabase.co`;
+          const session = await supabase.auth.getSession();
+          const jwt = session.data.session?.access_token;
+          if (!jwt) throw new Error('No session');
+
+          // Planner call
+          const chatSummary = conversationHistory.slice(-10).map(m => `${m.role}: ${m.content}`).join('\n');
+          const plannerRes = await fetch(`${base}/planner_v2`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${jwt}` },
+            body: JSON.stringify({ intent: conversationHistory[conversationHistory.length - 1]?.content || 'Create a personalized plan', constraints: {}, chatSummary }),
+          });
+          if (!plannerRes.ok) throw new Error(`planner_v2 ${plannerRes.status}`);
+          const { plan } = await plannerRes.json();
+
+          // Scheduler commit
+          // Collect on-device Apple busy windows (iOS) for the 42-day horizon
+          const now = new Date();
+          const horizonEnd = new Date(now.getTime() + 42 * 24 * 3600 * 1000);
+          let extraBusy: Array<{ start: string; end: string }> = [];
+          if (Platform.OS === 'ios') {
+            try {
+              const appleEvents = await getEventsInRange({ start: now, end: horizonEnd });
+              extraBusy = appleEvents
+                .filter(e => !e.allDay)
+                .map(e => ({ start: e.start, end: e.end }));
+            } catch (_) {}
+          }
+          const schedRes = await fetch(`${base}/schedule_v1`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${jwt}` },
+            body: JSON.stringify({ plan, commit: true, extraBusy }),
+          });
+          if (!schedRes.ok) throw new Error(`schedule_v1 ${schedRes.status}`);
+          const schedJson = await schedRes.json();
+          planResponse = { success: true, goal: plan.goal, tasks: plan.tasks, goalId: schedJson.goalId };
+        }
+      } catch (e) {
+        // ignore and fallback
+      }
+
+      if (!planResponse) {
+        // Legacy client-side AI
+        planResponse = await aiService.createGoalFromConversation(conversationHistory, {
+          age: userProfile?.age ?? null,
+          gender: userProfile?.gender ?? null,
+          heightCm: userProfile?.heightCm ?? null,
+          weightKg: userProfile?.weightKg ?? null,
+          unitSystem: userProfile?.unitSystem ?? null,
+          dateOfBirth: userProfile?.dateOfBirth ?? null,
+        });
+      }
       
       if (planResponse.success && planResponse.goal && planResponse.tasks) {
         // The database function will automatically assign a color if not provided
         // Store the goal and tasks in the database
-        const { data: goal_id, error: rpcError } = await supabase.rpc('create_goal_with_tasks', {
-          p_user_id: user.id,
-          p_goal: planResponse.goal,
-          p_tasks: planResponse.tasks
-        });
-
-        if (rpcError) {
-          throw new Error(`Failed to create goal: ${rpcError.message}`);
+        // If new pipeline already committed, skip DB RPC
+        let newGoalId: any = planResponse.goalId;
+        if (!newGoalId) {
+          const { data: goal_id, error: rpcError } = await supabase.rpc('create_goal_with_tasks', {
+            p_user_id: user.id,
+            p_goal: planResponse.goal,
+            p_tasks: planResponse.tasks
+          });
+          if (rpcError) {
+            throw new Error(`Failed to create goal: ${rpcError.message}`);
+          }
+          newGoalId = goal_id;
         }
 
-        // Schedule notifications for the tasks
-        try {
-          // Get user's reminder preference from notification settings
-          const reminderMinutes = notificationPreferences.taskReminderMinutes || 15;
-          await notificationService.scheduleMultipleTaskNotifications(planResponse.tasks, reminderMinutes);
-        } catch (notificationError) {
-          console.warn('Failed to schedule notifications:', notificationError);
-        }
+        // Notifications are scheduled by the centralized scheduler based on user preferences and due times
 
         addMessage('assistant', `🎉 **Goal Created Successfully!**\n\nYour goal "${planResponse.goal.title}" has been created with ${planResponse.tasks.length} scheduled tasks. You can now track your progress and follow your personalized plan!\n\n✅ Goal added to your goals list\n✅ Tasks scheduled on your calendar\n✅ Notifications set up for reminders\n\nGood luck on your journey! 🚀`);
 
         // Call the callback to refresh the goals list
         if (onGoalCreated) {
-          onGoalCreated({ id: goal_id, ...planResponse.goal });
+          onGoalCreated({ id: newGoalId, ...planResponse.goal });
         }
 
         // Close the modal after a short delay

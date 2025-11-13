@@ -15,15 +15,19 @@ import {
   Platform,
   RefreshControl,
   ImageBackground,
+  Modal,
 } from 'react-native';
+import * as Linking from 'expo-linking';
 import { PanGestureHandler, State } from 'react-native-gesture-handler';
-import { ChevronDown, ChevronLeft, ChevronRight, Calendar as CalendarIcon, Clock, CheckCircle, Circle } from 'lucide-react-native';
+import { ChevronDown, ChevronLeft, ChevronRight, Calendar as CalendarIcon, Clock, CheckCircle, Circle, X } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../providers/ThemeProvider';
 import { useAuth } from '../../providers/AuthProvider';
 import { supabase, createNewSupabaseClient } from '../../lib/supabase-client';
 import GoalModal from '../components/GoalModal';
+import TaskViewModal from '../components/TaskViewModal';
 import { shadowSm } from '@/ui/depth';
+import { getEventsInRange } from '@/app/services/appleCalendar';
 
 interface Task {
   id: string;
@@ -67,10 +71,17 @@ export default function CalendarScreen() {
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [selectedGoal, setSelectedGoal] = useState<Goal | null>(null);
   const [showGoalModal, setShowGoalModal] = useState(false);
+  const [showTaskViewModal, setShowTaskViewModal] = useState(false);
+  const [selectedTask, setSelectedTask] = useState<any>(null);
+  const [selectedGoogleEvent, setSelectedGoogleEvent] = useState<any>(null);
   const [currentDate, setCurrentDate] = useState<Date>(new Date());
   const [showMonthView, setShowMonthView] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [realtimeRefreshKey, setRealtimeRefreshKey] = useState(0);
+  const [showGoogleEvents, setShowGoogleEvents] = useState(false);
+  const [showAppleEvents, setShowAppleEvents] = useState(false);
+  const [googleEvents, setGoogleEvents] = useState<Array<{id:string; title:string; start:string; end:string; allDay?:boolean}>>([]);
+  const [appleEvents, setAppleEvents] = useState<Array<{id:string; title:string; start:string; end:string; allDay?:boolean}>>([]);
   
   // Animation values for swipe gestures
   const translateX = useRef(new Animated.Value(0)).current;
@@ -235,21 +246,91 @@ export default function CalendarScreen() {
     }
   }, [user]);
 
+  const loadCalendarPreference = useCallback(async (): Promise<{ google: boolean; apple: boolean } | null> => {
+    if (!user) return null;
+    try {
+      const { data } = await supabase
+        .from('user_planning_profile')
+        .select('preferences')
+        .eq('user_id', user.id)
+        .maybeSingle();
+      const google = Boolean((data as any)?.preferences?.showGoogleEvents);
+      const apple = Boolean((data as any)?.preferences?.showAppleEvents);
+      setShowGoogleEvents(google);
+      setShowAppleEvents(apple);
+      return { google, apple };
+    } catch {
+      return { google: false, apple: false };
+    }
+  }, [user]);
+
+  const fetchGoogleEvents = useCallback(async (force?: boolean) => {
+    if (!user || (!showGoogleEvents && !force)) return;
+    try {
+      // Check connection
+      const acc = await supabase.from('calendar_accounts').select('id').limit(1);
+      if (acc.error || (acc.data?.length ?? 0) === 0) { setGoogleEvents([]); return; }
+      // Compute window (month around currentDate)
+      const start = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
+      start.setDate(start.getDate() - 7);
+      const end = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0);
+      end.setDate(end.getDate() + 7);
+      const supaUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || '';
+      const projectRef = supaUrl.replace('https://','').split('.')[0];
+      const session = await supabase.auth.getSession();
+      const jwt = session.data.session?.access_token;
+      if (!jwt) return;
+      const url = `https://${projectRef}.functions.supabase.co/calendar_proxy/events?start=${encodeURIComponent(start.toISOString())}&end=${encodeURIComponent(end.toISOString())}`;
+      const res = await fetch(url, { headers: { Authorization: `Bearer ${jwt}` } });
+      if (!res.ok) { setGoogleEvents([]); return; }
+      const json = await res.json();
+      const ev: any[] = json.events || [];
+      setGoogleEvents(ev.map(e => ({ id: `${e.calendarId}:${e.id}`, title: e.title, start: e.start, end: e.end, allDay: e.allDay, location: e.location || null, htmlLink: e.htmlLink || null })));
+    } catch (e) {
+      setGoogleEvents([]);
+    }
+  }, [user, showGoogleEvents, currentDate]);
+
+  const fetchAppleEvents = useCallback(async (force?: boolean) => {
+    if (!user || (!showAppleEvents && !force) || Platform.OS !== 'ios') return;
+    try {
+      // Compute window (month around currentDate)
+      const start = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
+      start.setDate(start.getDate() - 7);
+      const end = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0);
+      end.setDate(end.getDate() + 7);
+      const ev = await getEventsInRange({ start, end });
+      setAppleEvents(ev.map(e => ({ id: `${e.calendarId}:${e.id}`, title: e.title, start: e.start, end: e.end, allDay: e.allDay })));
+    } catch (e) {
+      setAppleEvents([]);
+    }
+  }, [user, showAppleEvents, currentDate]);
+
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
+      const prefs = await loadCalendarPreference();
       await Promise.all([fetchTasks(), fetchGoals()]);
+      await Promise.all([
+        fetchGoogleEvents(prefs?.google === true),
+        fetchAppleEvents(prefs?.apple === true),
+      ]);
       setLoading(false);
     };
 
     fetchData();
-  }, [fetchTasks, fetchGoals]);
+  }, [fetchTasks, fetchGoals, loadCalendarPreference, fetchGoogleEvents, fetchAppleEvents]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
+    const prefs = await loadCalendarPreference();
     await Promise.all([fetchGoals(), fetchTasks()]);
+    await Promise.all([
+      fetchGoogleEvents(prefs?.google === true),
+      fetchAppleEvents(prefs?.apple === true),
+    ]);
     setRefreshing(false);
-  }, [fetchGoals, fetchTasks]);
+  }, [fetchGoals, fetchTasks, fetchGoogleEvents, fetchAppleEvents, loadCalendarPreference]);
 
   // Enhanced polling mechanism as backup for real-time updates
   useEffect(() => {
@@ -257,21 +338,33 @@ export default function CalendarScreen() {
 
     // More frequent polling for critical updates
     const fastPollInterval = setInterval(() => {
-      fetchGoals();
-      fetchTasks();
+      (async () => {
+        const prefs = await loadCalendarPreference();
+        await Promise.all([fetchGoals(), fetchTasks()]);
+        await Promise.all([
+          fetchGoogleEvents(prefs?.google === true),
+          fetchAppleEvents(prefs?.apple === true),
+        ]);
+      })().catch(()=>{});
     }, 10000); // Poll every 10 seconds for critical updates
 
     // Less frequent polling for general data consistency
     const slowPollInterval = setInterval(() => {
-      fetchGoals();
-      fetchTasks();
+      (async () => {
+        const prefs = await loadCalendarPreference();
+        await Promise.all([fetchGoals(), fetchTasks()]);
+        await Promise.all([
+          fetchGoogleEvents(prefs?.google === true),
+          fetchAppleEvents(prefs?.apple === true),
+        ]);
+      })().catch(()=>{});
     }, 60000); // Poll every 60 seconds for general consistency
 
     return () => {
       clearInterval(fastPollInterval);
       clearInterval(slowPollInterval);
     };
-  }, [user, fetchGoals, fetchTasks]);
+  }, [user, fetchGoals, fetchTasks, fetchGoogleEvents, fetchAppleEvents, loadCalendarPreference]);
 
   // Note: Task colors now reference goal colors directly from goals state
   // No need to update individual task colors anymore
@@ -507,7 +600,18 @@ export default function CalendarScreen() {
     const dateString = date.getFullYear() + '-' + 
       String(date.getMonth() + 1).padStart(2, '0') + '-' + 
       String(date.getDate()).padStart(2, '0');
-    return getTasksForDate(dateString).length;
+    const countTasks = getTasksForDate(dateString).length;
+    const countGoogle = showGoogleEvents ? googleEvents.filter(e => {
+      const d = new Date(e.start);
+      const ds = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+      return ds === dateString;
+    }).length : 0;
+    const countApple = showAppleEvents ? appleEvents.filter(e => {
+      const d = new Date(e.start);
+      const ds = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+      return ds === dateString;
+    }).length : 0;
+    return countTasks + countGoogle + countApple;
   };
 
   // Format date for display
@@ -1205,7 +1309,7 @@ export default function CalendarScreen() {
           </Text>
         </View>
 
-        {tasksForSelectedDate.length > 0 ? (
+        {tasksForSelectedDate.length > 0 || (showGoogleEvents && googleEvents.length > 0) || (showAppleEvents && appleEvents.length > 0) ? (
           <View style={styles.eventsList}>
             {tasksForSelectedDate.map((task) => {
               // Find the goal for this task from the goals state
@@ -1225,7 +1329,7 @@ export default function CalendarScreen() {
                     { backgroundColor: colors.card },
                     shadowSm(isDark),
                   ]}
-                  onPress={() => handleTaskToggle(task)}
+                  onPress={() => { setSelectedTask(task); setShowTaskViewModal(true); }}
                   activeOpacity={0.7}
                 >
                   <View style={styles.eventContent}>
@@ -1269,6 +1373,59 @@ export default function CalendarScreen() {
                 </TouchableOpacity>
               );
             })}
+            {showGoogleEvents && (
+              <>
+                {googleEvents.filter(e => {
+                  const [y,m,d] = selectedDate.split('-').map(Number);
+                  const dt = new Date(e.start);
+                  return dt.getFullYear()===y && (dt.getMonth()+1)===m && dt.getDate()===d;
+                }).map(ev => (
+                  <TouchableOpacity key={ev.id} style={[styles.eventCard, { backgroundColor: colors.card }, shadowSm(isDark)]} activeOpacity={0.7} onPress={() => setSelectedGoogleEvent(ev)}>
+                    <View style={styles.eventContent}>
+                      <View style={styles.eventCategoryContainer}>
+                        <View style={[styles.eventColorIndicator, { backgroundColor: '#34A853' }]} />
+                        <Text style={[styles.eventCategory, { color: '#34A853' }]}>Google Calendar</Text>
+                      </View>
+                      <Text style={[styles.eventTitle, { color: colors.text }]} numberOfLines={2}>{ev.title}</Text>
+                      <View style={styles.eventFooter}>
+                        <Text style={[styles.eventTime, { color: colors.textSecondary }]}>
+                          {new Date(ev.start).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'})}
+                          {` – `}
+                          {new Date(ev.end).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'})}
+                        </Text>
+                      </View>
+                    </View>
+                    <ChevronRight size={16} color={colors.textSecondary} />
+                  </TouchableOpacity>
+                ))}
+              </>
+            )}
+            {showAppleEvents && Platform.OS === 'ios' && (
+              <>
+                {appleEvents.filter(e => {
+                  const [y,m,d] = selectedDate.split('-').map(Number);
+                  const dt = new Date(e.start);
+                  return dt.getFullYear()===y && (dt.getMonth()+1)===m && dt.getDate()===d;
+                }).map(ev => (
+                  <View key={ev.id} style={[styles.eventCard, { backgroundColor: colors.card }, shadowSm(isDark)]}>
+                    <View style={styles.eventContent}>
+                      <View style={styles.eventCategoryContainer}>
+                        <View style={[styles.eventColorIndicator, { backgroundColor: '#007AFF' }]} />
+                        <Text style={[styles.eventCategory, { color: '#007AFF' }]}>Apple Calendar</Text>
+                      </View>
+                      <Text style={[styles.eventTitle, { color: colors.text }]} numberOfLines={2}>{ev.title}</Text>
+                      <View style={styles.eventFooter}>
+                        <Text style={[styles.eventTime, { color: colors.textSecondary }]}>
+                          {new Date(ev.start).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'})}
+                          {` – `}
+                          {new Date(ev.end).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'})}
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+                ))}
+              </>
+            )}
           </View>
         ) : (
           <View style={styles.emptyState}>
@@ -1293,6 +1450,78 @@ export default function CalendarScreen() {
         onTaskToggle={handleTaskToggleForModal}
         onGoalUpdated={handleGoalUpdated}
       />
+
+      {/* Task view modal */}
+      <TaskViewModal
+        visible={showTaskViewModal}
+        task={selectedTask}
+        onClose={() => setShowTaskViewModal(false)}
+        onEdit={() => setShowTaskViewModal(false)}
+        onTaskUpdated={(t:any) => {
+          setTasks(prev => prev.map(x => x.id === t.id ? { ...x, ...t } : x));
+          setShowTaskViewModal(false);
+        }}
+        onTaskDeleted={(id:string) => {
+          setTasks(prev => prev.filter(x => x.id !== id));
+          setShowTaskViewModal(false);
+        }}
+      />
+
+      {/* Google event info (read-only) */}
+      <Modal visible={!!selectedGoogleEvent} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setSelectedGoogleEvent(null)}>
+        <View style={[styles.gcModalContainer, { backgroundColor: colors.background }]}>
+          <View style={[styles.gcHeader, { borderBottomColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)' }]}> 
+            <Text style={[styles.gcHeaderTitle, { color: colors.text }]}>Google Calendar Event</Text>
+            <TouchableOpacity onPress={() => setSelectedGoogleEvent(null)} style={styles.gcHeaderClose}>
+              <X size={20} color={colors.text} />
+            </TouchableOpacity>
+          </View>
+          {selectedGoogleEvent && (
+            <ScrollView style={styles.gcContent} showsVerticalScrollIndicator={false}>
+              <Text style={[styles.gcTitle, { color: colors.text }]} numberOfLines={3}>{selectedGoogleEvent.title || '(no title)'}</Text>
+
+              <View style={styles.gcRow}>
+                <CalendarIcon size={18} color={colors.textSecondary} />
+                <Text style={[styles.gcText, { color: colors.text }]}>
+                  {new Date(selectedGoogleEvent.start).toLocaleString()} – {new Date(selectedGoogleEvent.end).toLocaleString()}
+                </Text>
+              </View>
+              {selectedGoogleEvent.allDay && (
+                <View style={styles.gcRow}>
+                  <Clock size={18} color={colors.textSecondary} />
+                  <Text style={[styles.gcText, { color: colors.text }]}>All-day</Text>
+                </View>
+              )}
+              {selectedGoogleEvent.location ? (
+                <View style={styles.gcRow}>
+                  <Text style={[styles.gcLabel, { color: colors.textSecondary }]}>Location</Text>
+                  <Text style={[styles.gcText, { color: colors.text }]}>{selectedGoogleEvent.location}</Text>
+                </View>
+              ) : null}
+
+              <View style={styles.gcActions}>
+                <TouchableOpacity
+                  style={[styles.gcPrimaryButton, { backgroundColor: colors.primary }]}
+                  onPress={() => {
+                    const link = selectedGoogleEvent.htmlLink || 'https://calendar.google.com';
+                    Linking.openURL(link).catch(()=>{});
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[styles.gcPrimaryButtonText, { color: colors.background }]}>Open in Google Calendar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.gcSecondaryButton, { borderColor: colors.border }]}
+                  onPress={() => setSelectedGoogleEvent(null)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[styles.gcSecondaryButtonText, { color: colors.text }]}>Close</Text>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+          )}
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -1514,5 +1743,73 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     height: 80, // Match container height
+  },
+  // Google event modal styles
+  gcModalContainer: {
+    flex: 1,
+  },
+  gcHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 15,
+    borderBottomWidth: 1,
+  },
+  gcHeaderTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  gcHeaderClose: {
+    padding: 6,
+  },
+  gcContent: {
+    paddingHorizontal: 20,
+    paddingTop: 16,
+  },
+  gcTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    marginBottom: 16,
+    lineHeight: 26,
+  },
+  gcRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 10,
+  },
+  gcLabel: {
+    fontSize: 14,
+    minWidth: 70,
+  },
+  gcText: {
+    fontSize: 16,
+  },
+  gcActions: {
+    marginTop: 20,
+    gap: 12,
+  },
+  gcPrimaryButton: {
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  gcPrimaryButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  gcSecondaryButton: {
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderWidth: 1,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  gcSecondaryButtonText: {
+    fontSize: 15,
+    fontWeight: '500',
   },
 });

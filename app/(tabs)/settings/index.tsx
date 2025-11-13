@@ -1,4 +1,4 @@
-import React, { useRef, useState, ReactNode } from "react";
+import React, { useRef, useState, ReactNode, useEffect } from "react";
 import {
   StyleSheet,
   Text,
@@ -19,8 +19,12 @@ import {
   ViewStyle,
   ModalProps,
 } from "react-native";
+import * as Linking from 'expo-linking';
+import * as WebBrowser from 'expo-web-browser';
 import { LinearGradient } from "expo-linear-gradient";
 import { Crown, Shield, FileText, X, Lock, Sun, Moon, Monitor, Sparkles, Calendar, Edit3, Save } from "lucide-react-native";
+import * as ExpoCalendar from 'expo-calendar';
+import { requestCalendarPermission } from "@/app/services/appleCalendar";
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Picker } from '@react-native-picker/picker';
 import * as Haptics from "expo-haptics";
@@ -83,6 +87,10 @@ export default function SettingsScreen() {
   const [termsModalVisible, setTermsModalVisible] = useState<boolean>(false);
   const [changePasswordModalVisible, setChangePasswordModalVisible] = useState<boolean>(false);
   const [subscriptionModalVisible, setSubscriptionModalVisible] = useState<boolean>(false);
+  const [calendarConnected, setCalendarConnected] = useState<boolean>(false);
+  const [showGoogleEvents, setShowGoogleEvents] = useState<boolean>(false);
+  const [appleConnected, setAppleConnected] = useState<boolean>(false);
+  const [showAppleEvents, setShowAppleEvents] = useState<boolean>(false);
   const [currentPassword, setCurrentPassword] = useState<string>('');
   const [newPassword, setNewPassword] = useState<string>('');
   const [confirmPassword, setConfirmPassword] = useState<string>('');
@@ -128,6 +136,99 @@ export default function SettingsScreen() {
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
     setSubscriptionModalVisible(true);
+  };
+
+  const refreshCalendarStatus = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('calendar_accounts')
+        .select('id')
+        .limit(1);
+      if (error) throw error;
+      setCalendarConnected((data?.length ?? 0) > 0);
+      // load preference
+      const prefs = await supabase
+        .from('user_planning_profile')
+        .select('preferences')
+        .eq('user_id', user.id)
+        .maybeSingle();
+      if (!prefs.error && prefs.data) {
+        const val = (prefs.data as any)?.preferences?.showGoogleEvents;
+        if (typeof val === 'boolean') setShowGoogleEvents(val);
+        const valApple = (prefs.data as any)?.preferences?.showAppleEvents;
+        if (typeof valApple === 'boolean') setShowAppleEvents(valApple);
+      }
+      // Apple on-device permission
+      const perm = await ExpoCalendar.getCalendarPermissionsAsync();
+      setAppleConnected(perm.status === 'granted');
+    } catch (e) {
+      setCalendarConnected(false);
+      setAppleConnected(false);
+    }
+  };
+
+  useEffect(() => {
+    refreshCalendarStatus();
+  }, []);
+
+  const handleConnectCalendar = async () => {
+    try {
+      const { data: session } = await supabase.auth.getSession();
+      const jwt = session.session?.access_token;
+      const supaUrl = (process.env.EXPO_PUBLIC_SUPABASE_URL || '').trim();
+      if (!supaUrl || !jwt) {
+        Alert.alert('Error', 'Missing configuration or session.');
+        return;
+      }
+      const projRef = supaUrl.replace('https://','').split('.')[0];
+      const returnUrl = Linking.createURL('/calendar-connected');
+      const startUrl = `https://${projRef}.functions.supabase.co/calendar_proxy/oauth/start?token=${encodeURIComponent(jwt)}&return_url=${encodeURIComponent(returnUrl)}`;
+      await WebBrowser.openAuthSessionAsync(startUrl, returnUrl);
+      // After closing, refresh connection state
+      await refreshCalendarStatus();
+    } catch (e:any) {
+      Alert.alert('Error', e.message || 'Failed to start calendar connection');
+    }
+  };
+
+  const handleConnectAppleCalendar = async () => {
+    try {
+      const granted = await requestCalendarPermission();
+      setAppleConnected(granted);
+      if (!granted) {
+        Alert.alert('Permission required', 'Please allow Calendar access in Settings to show Apple Calendar events.');
+      }
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'Failed to request calendar permission');
+    }
+  };
+
+  const updateShowGoogleEvents = async (val: boolean) => {
+    try {
+      setShowGoogleEvents(val);
+      const { data } = await supabase
+        .from('user_planning_profile')
+        .select('preferences')
+        .eq('user_id', user.id)
+        .maybeSingle();
+      const newPrefs = { ...(data?.preferences || {}), showGoogleEvents: val };
+      await supabase.from('user_planning_profile')
+        .upsert({ user_id: user.id, preferences: newPrefs }, { onConflict: 'user_id' });
+    } catch {}
+  };
+
+  const updateShowAppleEvents = async (val: boolean) => {
+    try {
+      setShowAppleEvents(val);
+      const { data } = await supabase
+        .from('user_planning_profile')
+        .select('preferences')
+        .eq('user_id', user.id)
+        .maybeSingle();
+      const newPrefs = { ...(data?.preferences || {}), showAppleEvents: val };
+      await supabase.from('user_planning_profile')
+        .upsert({ user_id: user.id, preferences: newPrefs }, { onConflict: 'user_id' });
+    } catch {}
   };
 
   const openAccountModal = async () => {
@@ -970,7 +1071,7 @@ export default function SettingsScreen() {
                 testID="upgrade-pro-button"
               >
                 <Crown size={20} color={colors.primary} />
-                <Text style={styles.upgradeButtonText}>Upgrade to Pro - $4.99/month</Text>
+                <Text style={styles.upgradeButtonText}>Upgrade to Premium - $4.99/month</Text>
               </TouchableOpacity>
             </LinearGradient>
           )}
@@ -1131,6 +1232,80 @@ export default function SettingsScreen() {
         </View>
 
       {/* Personalization moved into Edit Profile modal (entry in Account section only) */}
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Planning & Calendar</Text>
+          <View style={styles.settingItem}>
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <Text style={styles.settingLabel}>Google Calendar</Text>
+                <Text style={styles.settingDescription}>
+                  {calendarConnected ? 'Connected' : 'Not connected'}
+                </Text>
+              </View>
+              <TouchableOpacity 
+                style={styles.actionButton} 
+                activeOpacity={0.7}
+                onPress={handleConnectCalendar}
+                testID="connect-calendar-button"
+              >
+                <Text style={styles.actionButtonText}>{calendarConnected ? 'Reconnect' : 'Connect'}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+          <View style={styles.settingItem}>
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <Text style={styles.settingLabel}>Show Google events in Momentum</Text>
+                <Text style={styles.settingDescription}>Display read-only Google events on your Momentum calendar</Text>
+              </View>
+              <Switch
+                value={showGoogleEvents}
+                onValueChange={updateShowGoogleEvents}
+                trackColor={{ false: colors.border, true: colors.primary }}
+                thumbColor={showGoogleEvents ? 'white' : '#f4f3f4'}
+                disabled={!calendarConnected}
+              />
+            </View>
+          </View>
+          {Platform.OS === 'ios' && (
+            <>
+              <View style={styles.settingItem}>
+                <View style={styles.settingRow}>
+                  <View style={styles.settingInfo}>
+                    <Text style={styles.settingLabel}>Apple Calendar (On-device)</Text>
+                    <Text style={styles.settingDescription}>
+                      {appleConnected ? 'Connected' : 'Not connected'}
+                    </Text>
+                  </View>
+                  <TouchableOpacity 
+                    style={styles.actionButton} 
+                    activeOpacity={0.7}
+                    onPress={handleConnectAppleCalendar}
+                    testID="connect-apple-calendar-button"
+                  >
+                    <Text style={styles.actionButtonText}>{appleConnected ? 'Reconnect' : 'Connect'}</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+              <View style={[styles.settingItem, styles.settingItemLast]}>
+                <View style={styles.settingRow}>
+                  <View style={styles.settingInfo}>
+                    <Text style={styles.settingLabel}>Show Apple events in Momentum</Text>
+                    <Text style={styles.settingDescription}>Display read-only Apple on-device events on your Momentum calendar</Text>
+                  </View>
+                  <Switch
+                    value={showAppleEvents}
+                    onValueChange={updateShowAppleEvents}
+                    trackColor={{ false: colors.border, true: colors.primary }}
+                    thumbColor={showAppleEvents ? 'white' : '#f4f3f4'}
+                    disabled={!appleConnected}
+                  />
+                </View>
+              </View>
+            </>
+          )}
+        </View>
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Notifications</Text>

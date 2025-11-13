@@ -212,9 +212,8 @@ class SubscriptionService {
       return await result;
     } catch (error) {
       console.error('Purchase error:', error);
-      // Don't show alert here - let the modal handle the error display
-      // Just return false to indicate failure
-      return false;
+      // Rethrow so the UI can present a specific error message (e.g., server misconfiguration)
+      throw error;
     }
   }
 
@@ -509,10 +508,15 @@ class SubscriptionService {
         body: { receipt },
       });
       if (error) throw error;
+      // If the edge function returns an error payload, surface it to the caller
+      if (data && typeof data === 'object' && (data as any).error) {
+        throw new Error((data as any).error);
+      }
       return data;
     } catch (err) {
       console.error('Receipt verification error:', err);
-      return { isActive: false };
+      // Bubble errors so UI can display actionable messaging
+      throw err;
     }
   }
 }

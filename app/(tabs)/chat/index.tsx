@@ -356,14 +356,7 @@ export default function ChatScreen() {
           throw new Error(`Failed to create goal: ${rpcError.message}`);
         }
 
-        // Schedule notifications for the tasks
-        try {
-          // Get user's reminder preference from notification settings
-          const reminderMinutes = notificationPreferences.taskReminderMinutes || 15;
-          await notificationService.scheduleMultipleTaskNotifications(planResponse.tasks, reminderMinutes);
-        } catch (notificationError) {
-          console.warn('Failed to schedule notifications:', notificationError);
-        }
+        // Notifications are scheduled by the centralized scheduler based on user preferences and due times
 
         addMessage('assistant', `🎉 **Goal Created Successfully!**\n\nYour goal "${planResponse.goal.title}" has been created with ${planResponse.tasks.length} scheduled tasks. You can now track your progress and follow your personalized plan!\n\n✅ Goal added to your goals list\n✅ Tasks scheduled on your calendar\n✅ Notifications set up for reminders\n\nGood luck on your journey! 🚀`);
 

@@ -33,18 +33,33 @@ try {
   console.warn('react-native-iap not available (likely Expo Go / missing native module):', error);
 }
 
+// Normalize default vs named export shapes
+RNIap = (RNIap && RNIap.default) ? RNIap.default : RNIap;
+
+// Capability check for native availability
+function hasIap(): boolean {
+  return !!RNIap
+    && typeof RNIap.initConnection === 'function'
+    && typeof RNIap.getSubscriptions === 'function'
+    && typeof RNIap.requestSubscription === 'function'
+    && typeof RNIap.getAvailablePurchases === 'function'
+    && typeof RNIap.finishTransaction === 'function'
+    && typeof RNIap.purchaseUpdatedListener === 'function'
+    && typeof RNIap.purchaseErrorListener === 'function';
+}
+
 export const iapEnvironment = {
   platform: Platform.OS,
   appOwnership: (Constants as any)?.appOwnership,
   isWeb,
-  isIapAvailable: !!RNIap,
+  isIapAvailable: hasIap(),
 };
 
 // Create a wrapper that provides the same interface
 export const iapWrapper = {
   // Connection methods
   async initConnection() {
-    if (!RNIap || isWeb) {
+    if (!hasIap() || isWeb) {
       console.log('IAP initConnection skipped (IAP unavailable or web)');
       return;
     }
@@ -52,7 +67,7 @@ export const iapWrapper = {
   },
 
   async endConnection() {
-    if (!RNIap || isWeb) {
+    if (!hasIap() || isWeb) {
       console.log('IAP endConnection skipped (IAP unavailable or web)');
       return;
     }
@@ -60,7 +75,7 @@ export const iapWrapper = {
   },
 
   async flushFailedPurchasesCachedAsPendingAndroid() {
-    if (!RNIap || isWeb) {
+    if (!hasIap() || isWeb) {
       console.log('IAP flushFailedPurchasesCachedAsPendingAndroid skipped (IAP unavailable or web)');
       return;
     }
@@ -69,7 +84,7 @@ export const iapWrapper = {
 
   // Subscription methods
   async getSubscriptions(options: { skus: string[] }) {
-    if (!RNIap || isWeb) {
+    if (!hasIap() || isWeb) {
       console.log('IAP getSubscriptions skipped (IAP unavailable or web)');
       return [];
     }
@@ -78,7 +93,7 @@ export const iapWrapper = {
 
   async requestSubscription(options: { sku: string }) {
     console.log('IAP requestSubscription with', options, 'env:', iapEnvironment);
-    if (!RNIap || isWeb) {
+    if (!hasIap() || isWeb) {
       throw new Error('IAP_NOT_AVAILABLE');
     }
     try {
@@ -90,7 +105,7 @@ export const iapWrapper = {
   },
 
   async getAvailablePurchases() {
-    if (!RNIap || isWeb) {
+    if (!hasIap() || isWeb) {
       console.log('IAP getAvailablePurchases skipped (IAP unavailable or web)');
       return [];
     }
@@ -98,7 +113,7 @@ export const iapWrapper = {
   },
 
   async finishTransaction(options: { purchase: any; isConsumable: boolean }) {
-    if (!RNIap || isWeb) {
+    if (!hasIap() || isWeb) {
       console.log('IAP finishTransaction skipped (IAP unavailable or web)');
       return;
     }
@@ -107,7 +122,7 @@ export const iapWrapper = {
 
   // Listener methods
   purchaseUpdatedListener(callback: MockPurchaseUpdatedListener) {
-    if (!RNIap || isWeb) {
+    if (!hasIap() || isWeb) {
       console.log('IAP purchaseUpdatedListener skipped (IAP unavailable or web)');
       return { remove: () => {} };
     }
@@ -120,7 +135,7 @@ export const iapWrapper = {
   },
 
   purchaseErrorListener(callback: MockPurchaseErrorListener) {
-    if (!RNIap || isWeb) {
+    if (!hasIap() || isWeb) {
       console.log('IAP purchaseErrorListener skipped (IAP unavailable or web)');
       return { remove: () => {} };
     }
@@ -138,4 +153,4 @@ export type Subscription = MockSubscription;
 export type Purchase = MockPurchase;
 export type PurchaseUpdatedListener = MockPurchaseUpdatedListener;
 export type PurchaseErrorListener = MockPurchaseErrorListener;
-export const isIapAvailable: boolean = !!RNIap;
+export const isIapAvailable: boolean = hasIap();

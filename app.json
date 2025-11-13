@@ -2,7 +2,7 @@
   "expo": {
     "name": "Momentum iOS App",
     "slug": "momentum-ios-app",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "orientation": "portrait",
     "icon": "./assets/images/app-store-logo.png",
     "scheme": "momentum",
@@ -23,13 +23,15 @@
       "infoPlist": {
         "NSUserNotificationsUsageDescription": "We send you reminders to help you stay on track with your goals and tasks.",
         "NSCameraUsageDescription": "Upload a profile picture or attach images to your goals.",
-        "NSPhotoLibraryUsageDescription": "Choose photos to attach to your goals or set as your profile picture."
+        "NSPhotoLibraryUsageDescription": "Choose photos to attach to your goals or set as your profile picture.",
+        "NSCalendarsUsageDescription": "We use your calendar to avoid scheduling conflicts."
       },
       "config": {
         "usesNonExemptEncryption": false
       },
       "associatedDomains": [
-        "applinks:rork.com"
+          "applinks:rork.com",
+          "webcredentials:rork.com"
       ]
     },
     "android": {
@@ -89,7 +91,8 @@
       },
       "eas": {
         "projectId": "0c48d71b-377c-4bf2-ab52-76b601680f84"
-      }
+        },
+        "iosPremiumSkus": "com.momentumaicalendar.premium.monthly"
     }
   }
 }

@@ -162,6 +162,8 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess, onSignUpR
                   keyboardType="email-address"
                   autoCapitalize="none"
                   autoCorrect={false}
+                  textContentType={Platform.OS === 'ios' ? 'username' : 'emailAddress'}
+                  autoComplete={Platform.OS === 'ios' ? 'username' : 'email'}
                 />
               </View>
 
@@ -175,6 +177,8 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess, onSignUpR
                   onChangeText={setPassword}
                   secureTextEntry
                   autoCapitalize="none"
+                  textContentType={Platform.OS === 'ios' ? 'password' : 'password'}
+                  autoComplete={Platform.OS === 'ios' ? 'password' : 'password'}
                 />
               </View>
 

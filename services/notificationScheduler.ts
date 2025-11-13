@@ -75,31 +75,24 @@ export class NotificationScheduler {
       return;
     }
 
-    // Clear existing scheduled tasks to prevent duplicates
-    this.scheduledTasks.clear();
-
-    const today = new Date();
-    const todayString = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0');
+    // Keep the set for deduplication across calls; do not clear to avoid resending
+    const now = new Date();
+    const daysAhead = 14; // schedule up to 14 days ahead to ensure delivery even if app is closed
+    const cutoff = new Date(now.getTime() + daysAhead * 24 * 60 * 60 * 1000);
 
     for (const task of tasks) {
       const dueDate = new Date(task.due_at);
-      const taskDateString = dueDate.getFullYear() + '-' + String(dueDate.getMonth() + 1).padStart(2, '0') + '-' + String(dueDate.getDate()).padStart(2, '0');
-      
-      // ONLY schedule notifications for tasks due TODAY
-      if (taskDateString !== todayString) {
-        continue;
-      }
+      // Only schedule for tasks within the next N days
+      if (!(dueDate > now && dueDate <= cutoff)) continue;
       
       // Calculate reminder time using user preference (default 15 minutes before due time)
       const reminderMinutes = this.notificationService?.preferences?.taskReminderMinutes || 15;
       const reminderTime = new Date(dueDate.getTime() - (reminderMinutes * 60 * 1000));
       
       // Only schedule if the reminder time is in the future
-      if (reminderTime > today) {
+      if (reminderTime > now) {
         // Check if we've already sent a notification for this task (persistent check)
-        if (this.hasNotificationBeenSent(task.id)) {
-          continue;
-        }
+        if (this.hasNotificationBeenSent(task.id)) continue;
         
         try {
           const notificationId = await this.notificationService.scheduleTaskReminder(
@@ -111,7 +104,7 @@ export class NotificationScheduler {
           
           if (notificationId) {
             this.scheduledTasks.add(task.id);
-            this.markNotificationAsSent(task.id); // Mark as sent persistently
+            this.markNotificationAsSent(task.id); // Persist to avoid duplicates across restarts
           }
         } catch (error) {
           console.error(`Error scheduling notification for task ${task.id}:`, error);
