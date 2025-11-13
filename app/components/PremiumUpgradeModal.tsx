@@ -96,6 +96,14 @@ export default function PremiumUpgradeModal({
     } catch (error) {
       console.error('PremiumUpgradeModal: Purchase error:', error);
       // Provide more specific error messages based on the error type
+      if (error && typeof error === 'object' && (error as any).message === 'IAP_NOT_AVAILABLE') {
+        Alert.alert(
+          'In‑App Purchases Unavailable',
+          'In‑App Purchases are not available in this build. Please reinstall from TestFlight or update to the latest build.',
+          [{ text: 'OK' }]
+        );
+        return;
+      }
       let errorMessage = 'An error occurred during the purchase process. Please try again.';
       
       if (error && typeof error === 'object') {
@@ -180,6 +188,7 @@ export default function PremiumUpgradeModal({
   ];
   
   const { title, subtitle } = getTriggerContent();
+  const displayPrice = (subs[0]?.localizedPrice || subs[0]?.price || '$4.99') + '/month';
   
   return (
     <Modal
@@ -219,6 +228,7 @@ export default function PremiumUpgradeModal({
             </View>
             <Text style={[styles.title, { color: colors.text }]}>{title}</Text>
             <Text style={[styles.subtitle, { color: colors.textSecondary }]}>{subtitle}</Text>
+            <Text style={[styles.priceText, { color: colors.primary }]}>{displayPrice}</Text>
           </View>
           
           {/* Features */}
@@ -504,5 +514,10 @@ const styles = StyleSheet.create({
     fontSize: 12,
     textAlign: 'center',
     lineHeight: 18,
+  },
+  priceText: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginTop: 6,
   },
 });

@@ -95,6 +95,25 @@ export const SubscriptionProvider: React.FC<SubscriptionProviderProps> = ({ chil
     }
   }, [authUser]);
 
+  // Show upgrade modal once after first login (only for non-premium users)
+  useEffect(() => {
+    const maybeShowFirstLoginPrompt = async () => {
+      if (!authUser) return;
+      if (isPremium) return;
+      try {
+        const key = `upgrade_prompt_shown:${authUser.id}`;
+        const shown = await getItem(key);
+        if (shown !== 'true') {
+          showUpgradeModal('general');
+          await setItem(key, 'true');
+        }
+      } catch (e) {
+        // ignore
+      }
+    };
+    maybeShowFirstLoginPrompt();
+  }, [authUser, isPremium, showUpgradeModal]);
+
   // Re-verify receipt on foreground to reflect App Store changes (renewal/expiry)
   useEffect(() => {
     const sub = AppState.addEventListener('change', (state) => {
