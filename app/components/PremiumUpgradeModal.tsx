@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -73,6 +73,8 @@ export default function PremiumUpgradeModal({
       if (user?.id) {
         await subscriptionService.initialize(user.id);
       }
+      // Yield a frame to ensure modal presentation is committed before StoreKit presents
+      await new Promise((r) => setTimeout(r, 500));
       console.log('PremiumUpgradeModal: Calling subscriptionService.purchaseSubscription() with SKU:', selected);
       const success = await subscriptionService.purchaseSubscription(selected || undefined);
       console.log('PremiumUpgradeModal: Purchase result:', success);
@@ -95,8 +97,22 @@ export default function PremiumUpgradeModal({
       }
     } catch (error) {
       console.error('PremiumUpgradeModal: Purchase error:', error);
+      
+      // Handle error code 2 (user cancelled) silently - don't show error alert
+      const errorCode = (error as any)?.code;
+      if (errorCode === 2 || errorCode === 'E_USER_CANCELLED') {
+        console.log('PremiumUpgradeModal: Purchase cancelled by user (error code 2) - handling silently');
+        // Just close the modal without showing error
+        return;
+      }
+      
       // Provide more specific error messages based on the error type
-      if (error && typeof error === 'object' && (error as any).message === 'IAP_NOT_AVAILABLE') {
+      if (
+        error &&
+        typeof error === 'object' &&
+        ((error as any).message === 'IAP_NOT_AVAILABLE' ||
+          (error as any).message === 'IAP_NATIVE_MODULE_UNAVAILABLE')
+      ) {
         Alert.alert(
           'In‑App Purchases Unavailable',
           'In‑App Purchases are not available in this build. Please reinstall from TestFlight or update to the latest build.',
@@ -111,9 +127,6 @@ export default function PremiumUpgradeModal({
           errorMessage = error.message;
         } else if (error.code) {
           switch (error.code) {
-            case 'E_USER_CANCELLED':
-              errorMessage = 'Purchase was cancelled.';
-              break;
             case 'E_ITEM_UNAVAILABLE':
               errorMessage = 'This subscription is not available. Please try again later.';
               break;
@@ -149,6 +162,38 @@ export default function PremiumUpgradeModal({
       setLoading(false);
     }
   };
+
+  const handleSyncSubscription = useCallback(async () => {
+    setLoading(true);
+    try {
+      console.log('PremiumUpgradeModal: Sync Subscription triggered');
+      await subscriptionService.resyncPurchaseHistory();
+      await subscriptionService.syncSubscriptionStatus();
+      Alert.alert(
+        'Subscription Synced',
+        'We asked Apple for your latest subscription status. If you still see the free plan, try Restore Purchases.'
+      );
+    } catch (error: any) {
+      console.error('PremiumUpgradeModal: Sync Subscription error:', error);
+      Alert.alert(
+        'Sync Failed',
+        error?.message || 'Unable to sync subscription right now. Please try again.'
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+  useEffect(() => {
+    if (typeof __DEV__ === 'undefined' || !__DEV__) return;
+    const globalKey = '__MOMENTUM_SYNC_SUBSCRIPTION__';
+    (globalThis as any)[globalKey] = handleSyncSubscription;
+    return () => {
+      if ((globalThis as any)[globalKey] === handleSyncSubscription) {
+        delete (globalThis as any)[globalKey];
+      }
+    };
+  }, [handleSyncSubscription]);
+
   
   const getTriggerContent = () => {
     switch (trigger) {
@@ -219,13 +264,107 @@ export default function PremiumUpgradeModal({
         >
           {/* Icon and Title */}
           <View style={styles.titleSection}>
-            <View style={[styles.iconContainer, { backgroundColor: colors.primary }]}>
-              <Image
-                source={require('@/assets/images/premium-icon-2.png')}
-                style={{ width: 96, height: 96 }}
-                resizeMode="contain"
-              />
-            </View>
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={async () => {
+                try {
+                  const { iapEnvironment, iapWrapper, iapDebugStore, getIapLocalLog } = await import('@/lib/iap-wrapper');
+                  const { subscriptionService } = await import('@/services/subscriptionService');
+                  // Try to detect native modules
+                  let nativeMods = 'n/a';
+                  let nativeCount = 0;
+                  try {
+                    const RN = require('react-native');
+                    const modKeys = Object.keys(RN?.NativeModules || {}).filter((k: string) =>
+                      /IAP|Iap|RNIap|OpenIAP|NitroIap/.test(k)
+                    );
+                    nativeCount = modKeys.length;
+                    nativeMods = modKeys.join(', ');
+                  } catch {}
+                  // Probe RN IAP exported functions
+                  let apiInfo = '';
+                  try {
+                    const IAP = require('react-native-iap');
+                    const mod = IAP?.default ?? IAP;
+                    const hasFetchProducts = typeof mod?.fetchProducts === 'function';
+                    apiInfo =
+                      `reqSub=${typeof mod?.requestSubscription === 'function'}, ` +
+                      `reqPurchase=${typeof mod?.requestPurchase === 'function'}, ` +
+                      `getSubs=${typeof mod?.getSubscriptions === 'function'}, ` +
+                      `fetchProducts=${hasFetchProducts}`;
+                  } catch {}
+                  // Try fetching subscriptions
+                  let subsInfo = '';
+                  try {
+                    const subs = await subscriptionService.getSubscriptions();
+                    subsInfo = `found=${subs.length}${subs.length ? ` first=${subs[0]?.productId}` : ''}`;
+                  } catch (e: any) {
+                    subsInfo = `error=${e?.message || String(e)}`;
+                  }
+                  // Capability-based prediction
+                  let predicted = 'none';
+                  try {
+                    const IAP = require('react-native-iap');
+                    const mod = IAP?.default ?? IAP;
+                    if (typeof mod?.requestSubscription === 'function') predicted = 'requestSubscription';
+                    else if (typeof mod?.requestPurchase === 'function') predicted = 'requestPurchase';
+                  } catch {}
+                  // Executed last attempt info (runtime)
+                  const executedVariant = iapDebugStore?.lastRequestVariant || 'none';
+                  const executedSku = iapDebugStore?.lastSku || 'n/a';
+                  const lastError = iapDebugStore?.lastRequestError || '';
+                  // Listener availability check
+                  let listenerInfo = '';
+                  try {
+                    const IAP = require('react-native-iap');
+                    const mod = IAP?.default ?? IAP;
+                    listenerInfo =
+                      `updatedListener=${typeof mod?.purchaseUpdatedListener === 'function'}, ` +
+                      `errorListener=${typeof mod?.purchaseErrorListener === 'function'}`;
+                  } catch {}
+                  // Timestamps for request and listener events
+                  const reqAtMs = iapDebugStore?.lastRequestAtMs || 0;
+                  const listenerAtMs = iapDebugStore?.lastListenerEventAtMs || 0;
+                  const timingInfo =
+                    `reqAt=${reqAtMs ? new Date(reqAtMs).toISOString() : 'never'}, ` +
+                    `listenerAt=${listenerAtMs ? new Date(listenerAtMs).toISOString() : 'never'}`;
+                  // Local debug log snapshot
+                  let localLogText = '';
+                  try {
+                    const logs = getIapLocalLog();
+                    localLogText = logs
+                      .slice(-5)
+                      .map((l) => `${new Date(l.t).toISOString()} ${l.loc}: ${l.msg}${l.data ? ` ${JSON.stringify(l.data)}` : ''}`)
+                      .join('\n');
+                  } catch {}
+                  const diag =
+                    `IAP Diagnostics\n\n` +
+                    `- isAvailableNow: ${iapWrapper.isAvailable()}\n` +
+                    `- platform: ${iapEnvironment.platform}, isWeb: ${iapEnvironment.isWeb}\n` +
+                    `- appOwnership: ${iapEnvironment.appOwnership}\n` +
+                    `- native modules: count=${nativeCount} ${nativeMods || 'none'}\n` +
+                    `- api (capabilities): ${apiInfo}\n` +
+                    `- listeners: ${listenerInfo}\n` +
+                    `- predicted purchase call: ${predicted}\n` +
+                    `- executed (last): ${executedVariant} sku=${executedSku}\n` +
+                    (lastError ? `- lastError: ${lastError}\n` : '') +
+                    `- timing: ${timingInfo}\n` +
+                    `- subscriptions: ${subsInfo}\n` +
+                    (localLogText ? `\n- recent logs:\n${localLogText}\n` : '');
+                  Alert.alert('IAP Diagnostics', diag, [{ text: 'OK' }]);
+                } catch (e: any) {
+                  Alert.alert('IAP Diagnostics', `Failed: ${e?.message || String(e)}`);
+                }
+              }}
+            >
+              <View style={[styles.iconContainer, { backgroundColor: colors.primary }]}>
+                <Image
+                  source={require('@/assets/images/premium-icon-2.png')}
+                  style={{ width: 96, height: 96 }}
+                  resizeMode="contain"
+                />
+              </View>
+            </TouchableOpacity>
             <Text style={[styles.title, { color: colors.text }]}>{title}</Text>
             <Text style={[styles.subtitle, { color: colors.textSecondary }]}>{subtitle}</Text>
             <Text style={[styles.priceText, { color: colors.primary }]}>{displayPrice}</Text>
@@ -330,6 +469,7 @@ export default function PremiumUpgradeModal({
                 Restore Purchases
               </Text>
             </TouchableOpacity>
+
           </View>
           
           {/* Terms */}

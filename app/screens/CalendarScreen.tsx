@@ -28,6 +28,7 @@ import GoalModal from '../components/GoalModal';
 import TaskViewModal from '../components/TaskViewModal';
 import { shadowSm } from '@/ui/depth';
 import { getEventsInRange } from '@/app/services/appleCalendar';
+import * as ExpoCalendar from 'expo-calendar';
 
 interface Task {
   id: string;
@@ -97,6 +98,7 @@ export default function CalendarScreen() {
   const monthTranslateX = useRef(new Animated.Value(0)).current;
   const [isMonthAnimating, setIsMonthAnimating] = useState(false);
   const [isMonthGestureActive, setIsMonthGestureActive] = useState(false);
+  const dateDebounceRef = useRef<any>(null);
   
   // Device-adaptive gesture thresholds
   const swipeThreshold = useRef(screenWidth * 0.20).current; // 20% of screen - more sensitive
@@ -246,23 +248,37 @@ export default function CalendarScreen() {
     }
   }, [user]);
 
-  const loadCalendarPreference = useCallback(async (): Promise<{ google: boolean; apple: boolean } | null> => {
-    if (!user) return null;
+  const resolveAndPersistCalendarPrefs = useCallback(async (): Promise<{ google: boolean; apple: boolean }> => {
+    if (!user) return { google: false, apple: false };
     try {
-      const { data } = await supabase
-        .from('user_planning_profile')
-        .select('preferences')
-        .eq('user_id', user.id)
-        .maybeSingle();
-      const google = Boolean((data as any)?.preferences?.showGoogleEvents);
-      const apple = Boolean((data as any)?.preferences?.showAppleEvents);
-      setShowGoogleEvents(google);
-      setShowAppleEvents(apple);
-      return { google, apple };
+      const [{ data: ca }, { data: prof }, perm] = await Promise.all([
+        supabase.from('calendar_accounts').select('id').limit(1),
+        supabase.from('user_planning_profile').select('preferences').eq('user_id', user.id).maybeSingle(),
+        ExpoCalendar.getCalendarPermissionsAsync(),
+      ]);
+      const googleConnected = (ca?.length ?? 0) > 0;
+      const prefs = (prof as any)?.preferences || {};
+      const hasShowG = Object.prototype.hasOwnProperty.call(prefs, 'showGoogleEvents');
+      const hasShowA = Object.prototype.hasOwnProperty.call(prefs, 'showAppleEvents');
+      const effective = {
+        google: hasShowG ? !!prefs.showGoogleEvents : googleConnected,
+        apple: hasShowA ? !!prefs.showAppleEvents : perm.status === 'granted',
+      };
+      if (!hasShowG || !hasShowA) {
+        const merged = { ...prefs };
+        if (!hasShowG) merged.showGoogleEvents = effective.google;
+        if (!hasShowA) merged.showAppleEvents = effective.apple;
+        await supabase
+          .from('user_planning_profile')
+          .upsert({ user_id: user.id, preferences: merged }, { onConflict: 'user_id' });
+      }
+      setShowGoogleEvents(effective.google);
+      setShowAppleEvents(effective.apple);
+      return effective;
     } catch {
-      return { google: false, apple: false };
+      return { google: showGoogleEvents, apple: showAppleEvents };
     }
-  }, [user]);
+  }, [user, showGoogleEvents, showAppleEvents]);
 
   const fetchGoogleEvents = useCallback(async (force?: boolean) => {
     if (!user || (!showGoogleEvents && !force)) return;
@@ -282,12 +298,15 @@ export default function CalendarScreen() {
       if (!jwt) return;
       const url = `https://${projectRef}.functions.supabase.co/calendar_proxy/events?start=${encodeURIComponent(start.toISOString())}&end=${encodeURIComponent(end.toISOString())}`;
       const res = await fetch(url, { headers: { Authorization: `Bearer ${jwt}` } });
-      if (!res.ok) { setGoogleEvents([]); return; }
+      if (!res.ok) { 
+        if (res.status === 404) { setGoogleEvents([]); }
+        return; 
+      }
       const json = await res.json();
       const ev: any[] = json.events || [];
       setGoogleEvents(ev.map(e => ({ id: `${e.calendarId}:${e.id}`, title: e.title, start: e.start, end: e.end, allDay: e.allDay, location: e.location || null, htmlLink: e.htmlLink || null })));
     } catch (e) {
-      setGoogleEvents([]);
+      // Preserve last known events on transient errors
     }
   }, [user, showGoogleEvents, currentDate]);
 
@@ -302,69 +321,85 @@ export default function CalendarScreen() {
       const ev = await getEventsInRange({ start, end });
       setAppleEvents(ev.map(e => ({ id: `${e.calendarId}:${e.id}`, title: e.title, start: e.start, end: e.end, allDay: e.allDay })));
     } catch (e) {
-      setAppleEvents([]);
+      // Preserve last known events on transient errors
     }
   }, [user, showAppleEvents, currentDate]);
 
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
-      const prefs = await loadCalendarPreference();
+      const prefs = await resolveAndPersistCalendarPrefs();
       await Promise.all([fetchTasks(), fetchGoals()]);
       await Promise.all([
-        fetchGoogleEvents(prefs?.google === true),
-        fetchAppleEvents(prefs?.apple === true),
+        fetchGoogleEvents(prefs.google === true),
+        fetchAppleEvents(prefs.apple === true),
       ]);
       setLoading(false);
     };
 
     fetchData();
-  }, [fetchTasks, fetchGoals, loadCalendarPreference, fetchGoogleEvents, fetchAppleEvents]);
+  }, [fetchTasks, fetchGoals, resolveAndPersistCalendarPrefs, fetchGoogleEvents, fetchAppleEvents]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    const prefs = await loadCalendarPreference();
+    const prefs = await resolveAndPersistCalendarPrefs();
     await Promise.all([fetchGoals(), fetchTasks()]);
     await Promise.all([
-      fetchGoogleEvents(prefs?.google === true),
-      fetchAppleEvents(prefs?.apple === true),
+      fetchGoogleEvents(prefs.google === true),
+      fetchAppleEvents(prefs.apple === true),
     ]);
     setRefreshing(false);
-  }, [fetchGoals, fetchTasks, fetchGoogleEvents, fetchAppleEvents, loadCalendarPreference]);
+  }, [fetchGoals, fetchTasks, fetchGoogleEvents, fetchAppleEvents, resolveAndPersistCalendarPrefs]);
 
-  // Enhanced polling mechanism as backup for real-time updates
+  // Periodic refresh for general data consistency (no preference rewrites)
   useEffect(() => {
     if (!user) return;
-
-    // More frequent polling for critical updates
-    const fastPollInterval = setInterval(() => {
-      (async () => {
-        const prefs = await loadCalendarPreference();
-        await Promise.all([fetchGoals(), fetchTasks()]);
-        await Promise.all([
-          fetchGoogleEvents(prefs?.google === true),
-          fetchAppleEvents(prefs?.apple === true),
-        ]);
-      })().catch(()=>{});
-    }, 10000); // Poll every 10 seconds for critical updates
-
-    // Less frequent polling for general data consistency
     const slowPollInterval = setInterval(() => {
       (async () => {
-        const prefs = await loadCalendarPreference();
         await Promise.all([fetchGoals(), fetchTasks()]);
         await Promise.all([
-          fetchGoogleEvents(prefs?.google === true),
-          fetchAppleEvents(prefs?.apple === true),
+          fetchGoogleEvents(),
+          fetchAppleEvents(),
         ]);
       })().catch(()=>{});
-    }, 60000); // Poll every 60 seconds for general consistency
+    }, 60000); // Poll every 60 seconds
 
     return () => {
-      clearInterval(fastPollInterval);
       clearInterval(slowPollInterval);
     };
-  }, [user, fetchGoals, fetchTasks, fetchGoogleEvents, fetchAppleEvents, loadCalendarPreference]);
+  }, [user, fetchGoals, fetchTasks, fetchGoogleEvents, fetchAppleEvents]);
+
+  // Refetch when currentDate (visible window) changes with a short debounce
+  useEffect(() => {
+    if (!user) return;
+    if (dateDebounceRef.current) clearTimeout(dateDebounceRef.current);
+    dateDebounceRef.current = setTimeout(() => {
+      fetchGoogleEvents();
+      fetchAppleEvents();
+    }, 300);
+    return () => {
+      if (dateDebounceRef.current) clearTimeout(dateDebounceRef.current);
+    };
+  }, [user, currentDate, fetchGoogleEvents, fetchAppleEvents]);
+
+  // React to toggle changes: fetch when enabled, clear when disabled
+  useEffect(() => {
+    if (!user) return;
+    if (showGoogleEvents) {
+      fetchGoogleEvents(true);
+    } else {
+      setGoogleEvents([]);
+    }
+  }, [user, showGoogleEvents, fetchGoogleEvents]);
+
+  useEffect(() => {
+    if (!user || Platform.OS !== 'ios') return;
+    if (showAppleEvents) {
+      fetchAppleEvents(true);
+    } else {
+      setAppleEvents([]);
+    }
+  }, [user, showAppleEvents, fetchAppleEvents]);
 
   // Note: Task colors now reference goal colors directly from goals state
   // No need to update individual task colors anymore
@@ -601,16 +636,16 @@ export default function CalendarScreen() {
       String(date.getMonth() + 1).padStart(2, '0') + '-' + 
       String(date.getDate()).padStart(2, '0');
     const countTasks = getTasksForDate(dateString).length;
-    const countGoogle = showGoogleEvents ? googleEvents.filter(e => {
-      const d = new Date(e.start);
-      const ds = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
-      return ds === dateString;
-    }).length : 0;
-    const countApple = showAppleEvents ? appleEvents.filter(e => {
-      const d = new Date(e.start);
-      const ds = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
-      return ds === dateString;
-    }).length : 0;
+    const dateFromEvent = (iso: string, allDay?: boolean) => {
+      if (allDay && typeof iso === 'string') {
+        // For all-day, trust the provided ISO date part to avoid TZ drift
+        return iso.slice(0, 10);
+      }
+      const d = new Date(iso);
+      return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    };
+    const countGoogle = showGoogleEvents ? googleEvents.filter(e => dateFromEvent(e.start, e.allDay) === dateString).length : 0;
+    const countApple = showAppleEvents ? appleEvents.filter(e => dateFromEvent(e.start, e.allDay) === dateString).length : 0;
     return countTasks + countGoogle + countApple;
   };
 
@@ -1376,9 +1411,13 @@ export default function CalendarScreen() {
             {showGoogleEvents && (
               <>
                 {googleEvents.filter(e => {
-                  const [y,m,d] = selectedDate.split('-').map(Number);
-                  const dt = new Date(e.start);
-                  return dt.getFullYear()===y && (dt.getMonth()+1)===m && dt.getDate()===d;
+                  const ds = e.allDay && typeof e.start === 'string'
+                    ? e.start.slice(0,10)
+                    : (() => {
+                        const dt = new Date(e.start);
+                        return dt.getFullYear() + '-' + String(dt.getMonth()+1).padStart(2,'0') + '-' + String(dt.getDate()).padStart(2,'0');
+                      })();
+                  return ds === selectedDate;
                 }).map(ev => (
                   <TouchableOpacity key={ev.id} style={[styles.eventCard, { backgroundColor: colors.card }, shadowSm(isDark)]} activeOpacity={0.7} onPress={() => setSelectedGoogleEvent(ev)}>
                     <View style={styles.eventContent}>
@@ -1403,9 +1442,13 @@ export default function CalendarScreen() {
             {showAppleEvents && Platform.OS === 'ios' && (
               <>
                 {appleEvents.filter(e => {
-                  const [y,m,d] = selectedDate.split('-').map(Number);
-                  const dt = new Date(e.start);
-                  return dt.getFullYear()===y && (dt.getMonth()+1)===m && dt.getDate()===d;
+                  const ds = e.allDay && typeof e.start === 'string'
+                    ? e.start.slice(0,10)
+                    : (() => {
+                        const dt = new Date(e.start);
+                        return dt.getFullYear() + '-' + String(dt.getMonth()+1).padStart(2,'0') + '-' + String(dt.getDate()).padStart(2,'0');
+                      })();
+                  return ds === selectedDate;
                 }).map(ev => (
                   <View key={ev.id} style={[styles.eventCard, { backgroundColor: colors.card }, shadowSm(isDark)]}>
                     <View style={styles.eventContent}>

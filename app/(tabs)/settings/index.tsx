@@ -130,6 +130,41 @@ export default function SettingsScreen() {
     }
     showUpgradeModal('general');
   };
+
+  // Hidden diagnostic for IAP debugging
+  const [diagnosticTaps, setDiagnosticTaps] = useState(0);
+  const handleDiagnosticTap = async () => {
+    const newCount = diagnosticTaps + 1;
+    setDiagnosticTaps(newCount);
+    
+    if (newCount >= 5) {
+      // Show IAP diagnostics after 5 taps
+      setDiagnosticTaps(0);
+      
+      // Use project alias to avoid incorrect relative paths during native bundling
+      const { isIapAvailable, iapEnvironment, iapWrapper } = await import('@/lib/iap-wrapper');
+      const { subscriptionService } = await import('@/services/subscriptionService');
+      
+      let diagnosticInfo = `IAP Diagnostics:\n\n`;
+      diagnosticInfo += `• isIapAvailable (import-time): ${isIapAvailable}\n`;
+      diagnosticInfo += `• isAvailableNow (runtime): ${iapWrapper.isAvailable()}\n`;
+      diagnosticInfo += `• Platform: ${iapEnvironment.platform}\n`;
+      diagnosticInfo += `• isWeb: ${iapEnvironment.isWeb}\n`;
+      diagnosticInfo += `• App Ownership: ${iapEnvironment.appOwnership}\n`;
+      
+      try {
+        const subs = await subscriptionService.getSubscriptions();
+        diagnosticInfo += `• Subscriptions found: ${subs.length}\n`;
+        if (subs.length > 0) {
+          diagnosticInfo += `• First SKU: ${subs[0].productId}\n`;
+        }
+      } catch (error) {
+        diagnosticInfo += `• Subscription fetch error: ${error.message}\n`;
+      }
+      
+      Alert.alert('IAP Diagnostics', diagnosticInfo, [{ text: 'OK' }]);
+    }
+  };
   
   const handleManageSubscription = async () => {
     if (Platform.OS !== "web") {
@@ -140,26 +175,27 @@ export default function SettingsScreen() {
 
   const refreshCalendarStatus = async () => {
     try {
-      const { data, error } = await supabase
-        .from('calendar_accounts')
-        .select('id')
-        .limit(1);
-      if (error) throw error;
-      setCalendarConnected((data?.length ?? 0) > 0);
-      // load preference
-      const prefs = await supabase
-        .from('user_planning_profile')
-        .select('preferences')
-        .eq('user_id', user.id)
-        .maybeSingle();
-      if (!prefs.error && prefs.data) {
-        const val = (prefs.data as any)?.preferences?.showGoogleEvents;
-        if (typeof val === 'boolean') setShowGoogleEvents(val);
-        const valApple = (prefs.data as any)?.preferences?.showAppleEvents;
-        if (typeof valApple === 'boolean') setShowAppleEvents(valApple);
+      const [{ data: ca }, perm, { data: prof }] = await Promise.all([
+        supabase.from('calendar_accounts').select('id').limit(1),
+        ExpoCalendar.getCalendarPermissionsAsync(),
+        supabase.from('user_planning_profile').select('preferences').eq('user_id', user.id).maybeSingle(),
+      ]);
+      const googleConnected = (ca?.length ?? 0) > 0;
+      setCalendarConnected(googleConnected);
+      const prefs = (prof as any)?.preferences || {};
+      const hasShowG = Object.prototype.hasOwnProperty.call(prefs, 'showGoogleEvents');
+      const hasShowA = Object.prototype.hasOwnProperty.call(prefs, 'showAppleEvents');
+      const effectiveShowGoogle = hasShowG ? !!prefs.showGoogleEvents : googleConnected;
+      const effectiveShowApple = hasShowA ? !!prefs.showAppleEvents : perm.status === 'granted';
+      if (!hasShowG || !hasShowA) {
+        const merged = { ...prefs };
+        if (!hasShowG) merged.showGoogleEvents = effectiveShowGoogle;
+        if (!hasShowA) merged.showAppleEvents = effectiveShowApple;
+        await supabase.from('user_planning_profile')
+          .upsert({ user_id: user.id, preferences: merged }, { onConflict: 'user_id' });
       }
-      // Apple on-device permission
-      const perm = await ExpoCalendar.getCalendarPermissionsAsync();
+      setShowGoogleEvents(effectiveShowGoogle);
+      setShowAppleEvents(effectiveShowApple);
       setAppleConnected(perm.status === 'granted');
     } catch (e) {
       setCalendarConnected(false);
@@ -197,6 +233,8 @@ export default function SettingsScreen() {
       setAppleConnected(granted);
       if (!granted) {
         Alert.alert('Permission required', 'Please allow Calendar access in Settings to show Apple Calendar events.');
+      } else {
+        await updateShowAppleEvents(true);
       }
     } catch (e: any) {
       Alert.alert('Error', e?.message || 'Failed to request calendar permission');
@@ -205,6 +243,35 @@ export default function SettingsScreen() {
 
   const updateShowGoogleEvents = async (val: boolean) => {
     try {
+      if (val) {
+        // Ensure connection exists
+        const { data: ca } = await supabase
+          .from('calendar_accounts')
+          .select('id')
+          .limit(1);
+        const connected = (ca?.length ?? 0) > 0;
+        if (!connected) {
+          await handleConnectCalendar();
+          const { data: ca2 } = await supabase
+            .from('calendar_accounts')
+            .select('id')
+            .limit(1);
+          const connected2 = (ca2?.length ?? 0) > 0;
+          if (!connected2) {
+            // Revert if still not connected
+            setShowGoogleEvents(false);
+            const { data } = await supabase
+              .from('user_planning_profile')
+              .select('preferences')
+              .eq('user_id', user.id)
+              .maybeSingle();
+            const newPrefs = { ...(data?.preferences || {}), showGoogleEvents: false };
+            await supabase.from('user_planning_profile')
+              .upsert({ user_id: user.id, preferences: newPrefs }, { onConflict: 'user_id' });
+            return;
+          }
+        }
+      }
       setShowGoogleEvents(val);
       const { data } = await supabase
         .from('user_planning_profile')
@@ -219,6 +286,26 @@ export default function SettingsScreen() {
 
   const updateShowAppleEvents = async (val: boolean) => {
     try {
+      if (val) {
+        const perm = await ExpoCalendar.getCalendarPermissionsAsync();
+        let granted = perm.status === 'granted';
+        if (!granted) {
+          granted = await requestCalendarPermission();
+        }
+        if (!granted) {
+          // Revert and persist false
+          setShowAppleEvents(false);
+          const { data } = await supabase
+            .from('user_planning_profile')
+            .select('preferences')
+            .eq('user_id', user.id)
+            .maybeSingle();
+          const newPrefs = { ...(data?.preferences || {}), showAppleEvents: false };
+          await supabase.from('user_planning_profile')
+            .upsert({ user_id: user.id, preferences: newPrefs }, { onConflict: 'user_id' });
+          return;
+        }
+      }
       setShowAppleEvents(val);
       const { data } = await supabase
         .from('user_planning_profile')
@@ -1070,6 +1157,11 @@ export default function SettingsScreen() {
                 onPress={handleUpgradeToPro}
                 testID="upgrade-pro-button"
               >
+                {/* Hidden diagnostic tap area */}
+                <TouchableOpacity 
+                  style={{ position: 'absolute', top: 0, left: 0, width: 20, height: 20, opacity: 0 }}
+                  onPress={handleDiagnosticTap}
+                />
                 <Crown size={20} color={colors.primary} />
                 <Text style={styles.upgradeButtonText}>Upgrade to Premium - $4.99/month</Text>
               </TouchableOpacity>
@@ -1291,8 +1383,8 @@ export default function SettingsScreen() {
               <View style={[styles.settingItem, styles.settingItemLast]}>
                 <View style={styles.settingRow}>
                   <View style={styles.settingInfo}>
-                    <Text style={styles.settingLabel}>Show Apple events in Momentum</Text>
-                    <Text style={styles.settingDescription}>Display read-only Apple on-device events on your Momentum calendar</Text>
+                    <Text style={styles.settingLabel}>Show Apple events (Experimental)</Text>
+                    <Text style={styles.settingDescription}>Display read-only Apple on-device events on your Momentum calendar. Experimental: may not work on all devices.</Text>
                   </View>
                   <Switch
                     value={showAppleEvents}
