@@ -24,6 +24,7 @@
     "supabase:cleanup": "node scripts/supabase-manager.js cleanup",
     "supabase:schema": "node scripts/supabase-manager.js schema",
     "supabase:all": "node scripts/supabase-manager.js all",
+    "verify:subscription": "node scripts/verify-subscription-setup.js",
     "auth:test": "node scripts/setup-auth.js test",
     "auth:connection": "node scripts/setup-auth.js connection",
     "auth:user": "node scripts/setup-auth.js user",
@@ -48,7 +49,8 @@
     "eas:build:preview": "eas build --platform ios --profile preview",
     "eas:build:production": "eas build --platform ios --profile production",
     "eas:submit": "eas submit --platform ios",
-    "eas:build:list": "eas build:list"
+    "eas:build:list": "eas build:list",
+    "eas-build-pre-install": "node scripts/reset-cocoapods-trunk.js"
   },
   "dependencies": {
     "@expo-google-fonts/inter": "^0.4.2",
@@ -69,6 +71,7 @@
     "eas": "^0.1.0",
     "expo": "54.0.20",
     "expo-blur": "~15.0.7",
+    "expo-build-properties": "~1.0.9",
     "expo-calendar": "~15.0.7",
     "expo-constants": "~18.0.9",
     "expo-dev-client": "~6.0.17",

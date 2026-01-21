@@ -2,12 +2,12 @@
   "expo": {
     "name": "Momentum iOS App",
     "slug": "momentum-ios-app",
-    "version": "1.1.0",
+    "version": "1.1.16",
     "orientation": "portrait",
     "icon": "./assets/images/app-store-logo.png",
     "scheme": "momentum",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": false,
+    "newArchEnabled": true,
     "sdkVersion": "54.0.0",
     "projectId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
     "_comment": "Using app-store-logo.png as the main app icon. Other icons (adaptive, favicon, splash) use icon.png as fallback.",
@@ -19,12 +19,13 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.momentumaicalendar.app",
-      "buildNumber": "3",
+      "buildNumber": "7",
       "infoPlist": {
         "NSUserNotificationsUsageDescription": "We send you reminders to help you stay on track with your goals and tasks.",
         "NSCameraUsageDescription": "Upload a profile picture or attach images to your goals.",
         "NSPhotoLibraryUsageDescription": "Choose photos to attach to your goals or set as your profile picture.",
-        "NSCalendarsUsageDescription": "We use your calendar to avoid scheduling conflicts."
+        "NSCalendarsUsageDescription": "We use your calendar to avoid scheduling conflicts.",
+        "NSCalendarsFullAccessUsageDescription": "Momentum needs calendar access to read events and avoid scheduling conflicts."
       },
       "config": {
         "usesNonExemptEncryption": false
@@ -80,6 +81,14 @@
         }
       ],
       "react-native-iap",
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "useFrameworks": "static"
+          }
+        }
+      ],
       "expo-web-browser"
     ],
     "experiments": {
@@ -92,7 +101,8 @@
       "eas": {
         "projectId": "0c48d71b-377c-4bf2-ab52-76b601680f84"
         },
-        "iosPremiumSkus": "com.momentumaicalendar.premium.monthly"
+        "iosPremiumSkus": "com.momentumaicalendar.premium.monthly",
+        "iapDebug": true
     }
   }
 }

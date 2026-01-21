@@ -36,16 +36,148 @@ try {
 // Normalize default vs named export shapes
 RNIap = (RNIap && RNIap.default) ? RNIap.default : RNIap;
 
-// Capability check for native availability
+// In-memory debug log buffer (fallback when external ingest unavailable)
+const iapLocalLog: Array<{ t: number; loc: string; msg: string; data?: Record<string, any> }> = [];
+function pushIapLocalLog(entry: { loc: string; msg: string; data?: Record<string, any> }) {
+  try {
+    iapLocalLog.push({ t: Date.now(), ...entry });
+    // keep last 20
+    if (iapLocalLog.length > 30) iapLocalLog.shift();
+  } catch {
+    // ignore
+  }
+}
+export function getIapLocalLog(): Array<{ t: number; loc: string; msg: string; data?: Record<string, any> }> {
+  return [...iapLocalLog];
+}
+
+// Minimal in-memory debug store for runtime diagnostics
+export const iapDebugStore: {
+  lastRequestVariant: 'nitro-request-object' | 'string' | 'sku-object' | 'requestSubscription' | 'legacy-subs' | 'none';
+  lastRequestError: string;
+  lastSku: string;
+  lastRequestAtMs: number;
+  lastListenerEventAtMs: number;
+} = {
+  lastRequestVariant: 'none',
+  lastRequestError: '',
+  lastSku: '',
+  lastRequestAtMs: 0,
+  lastListenerEventAtMs: 0,
+};
+
+const shouldLogIap = (() => {
+  try {
+    if (typeof __DEV__ !== 'undefined' && __DEV__) return true;
+    const extra =
+      (Constants as any)?.expoConfig?.extra ??
+      (Constants as any)?.manifestExtra ??
+      {};
+    if (extra?.iapDebug === true) return true;
+    const envFlag =
+      typeof globalThis !== 'undefined'
+        ? (globalThis as any)?.process?.env?.EXPO_PUBLIC_IAP_DEBUG
+        : undefined;
+    if (envFlag === '1' || envFlag === 'true') return true;
+  } catch {
+    // ignore
+  }
+  return false;
+})();
+
+const logIap = (...args: any[]) => {
+  if (!shouldLogIap) return;
+  try {
+    console.log('[iap-wrapper]', ...args);
+  } catch {
+    // swallow logging issues
+  }
+};
+
+// Capability check for native availability (robust across export shapes / Nitro)
 function hasIap(): boolean {
-  return !!RNIap
-    && typeof RNIap.initConnection === 'function'
-    && typeof RNIap.getSubscriptions === 'function'
-    && typeof RNIap.requestSubscription === 'function'
-    && typeof RNIap.getAvailablePurchases === 'function'
-    && typeof RNIap.finishTransaction === 'function'
-    && typeof RNIap.purchaseUpdatedListener === 'function'
-    && typeof RNIap.purchaseErrorListener === 'function';
+  try {
+    // Basic JS API presence
+    const hasRequest =
+      (RNIap && typeof RNIap.requestSubscription === 'function') ||
+      (RNIap && typeof RNIap.requestPurchase === 'function');
+    if (hasRequest) return true;
+
+    // Native module presence heuristic
+    const { NativeModules } = require('react-native');
+    const nativeKeys = Object.keys(NativeModules || {});
+    const hasNative = nativeKeys.some((k) =>
+      /IAP|Iap|RNIap|OpenIAP|NitroIap/.test(k)
+    );
+    return hasNative;
+  } catch {
+    return false;
+  }
+}
+
+const hasNitroProductApi = () => {
+  try {
+    return Boolean(RNIap && typeof RNIap.fetchProducts === 'function');
+  } catch {
+    return false;
+  }
+};
+
+function normalizeSubscriptionProduct(product: any, fallbackSku?: string): MockSubscription {
+  if (!product) {
+    return {
+      productId: fallbackSku || '',
+      title: '',
+      description: '',
+      price: '',
+      localizedPrice: '',
+      currency: '',
+    };
+  }
+
+  const productId =
+    product.productId ??
+    product.productIdentifier ??
+    product.sku ??
+    product.id ??
+    fallbackSku ??
+    '';
+
+  const title =
+    product.title ??
+    product.displayName ??
+    product.displayNameIOS ??
+    product.name ??
+    '';
+
+  const description =
+    product.description ??
+    product.localizedDescription ??
+    '';
+
+  const displayPrice =
+    product.displayPrice ??
+    product.localizedPrice ??
+    product.priceString;
+  const numericPrice =
+    typeof product.price === 'number'
+      ? product.price.toFixed(2)
+      : product.price;
+
+  const currency =
+    product.currency ??
+    product.currencyCode ??
+    product.priceCurrencyCode ??
+    '';
+
+  return {
+    productId,
+    title,
+    description,
+    price: (numericPrice ?? displayPrice ?? '') || '',
+    localizedPrice: (displayPrice ?? numericPrice ?? '') || '',
+    currency: currency || '',
+  };
 }
 
 export const iapEnvironment = {
@@ -57,94 +189,252 @@ export const iapEnvironment = {
 
 // Create a wrapper that provides the same interface
 export const iapWrapper = {
+  // Expose availability as a function to avoid stale snapshots
+  isAvailable() {
+    return !isWeb && hasIap();
+  },
   // Connection methods
   async initConnection() {
-    if (!hasIap() || isWeb) {
-      console.log('IAP initConnection skipped (IAP unavailable or web)');
+    if (isWeb) {
+      console.log('IAP initConnection skipped (web)');
       return;
     }
-    return RNIap.initConnection();
+    if (RNIap && typeof RNIap.initConnection === 'function') {
+      return RNIap.initConnection();
+    }
+    console.log('IAP initConnection not available on RNIap');
+    return;
   },
 
   async endConnection() {
-    if (!hasIap() || isWeb) {
-      console.log('IAP endConnection skipped (IAP unavailable or web)');
+    if (isWeb) {
+      console.log('IAP endConnection skipped (web)');
       return;
     }
-    return RNIap.endConnection();
+    if (RNIap && typeof RNIap.endConnection === 'function') {
+      return RNIap.endConnection();
+    }
+    return;
   },
 
   async flushFailedPurchasesCachedAsPendingAndroid() {
-    if (!hasIap() || isWeb) {
-      console.log('IAP flushFailedPurchasesCachedAsPendingAndroid skipped (IAP unavailable or web)');
+    if (isWeb) {
       return;
     }
-    return RNIap.flushFailedPurchasesCachedAsPendingAndroid?.();
+    return RNIap?.flushFailedPurchasesCachedAsPendingAndroid?.();
   },
 
   // Subscription methods
   async getSubscriptions(options: { skus: string[] }) {
-    if (!hasIap() || isWeb) {
-      console.log('IAP getSubscriptions skipped (IAP unavailable or web)');
+    try {
+      if (isWeb) {
+        return [];
+      }
+      if (!RNIap) {
+        return [];
+      }
+
+      const skus = Array.isArray(options?.skus) ? options.skus : [];
+      if (!skus.length) {
+        return [];
+      }
+      const fallbackSku = skus[0];
+      logIap('getSubscriptions start', { skusCount: skus.length });
+
+      if (hasNitroProductApi()) {
+        try {
+          const products = await RNIap.fetchProducts({ skus, type: 'subs' });
+          if (Array.isArray(products)) {
+            logIap('getSubscriptions fetched via fetchProducts', { count: products.length });
+            return products.map((item: any) =>
+              normalizeSubscriptionProduct(item, fallbackSku)
+            );
+          }
+        } catch (nitroError) {
+          console.error('IAP fetchProducts error:', nitroError);
+        }
+      }
+
+      if (typeof RNIap.getSubscriptions === 'function') {
+        const legacy = await RNIap.getSubscriptions({ skus });
+        if (Array.isArray(legacy)) {
+          logIap('getSubscriptions fetched via getSubscriptions', { count: legacy.length });
+          return legacy.map((item: any) =>
+            normalizeSubscriptionProduct(item, fallbackSku)
+          );
+        }
+        return [];
+      }
+
+      // In some Nitro setups the API may be available post-init only; return empty to avoid crashing
+      return [];
+    } catch (e) {
+      console.error('IAP getSubscriptions error:', e);
       return [];
     }
-    return RNIap.getSubscriptions(options);
   },
 
   async requestSubscription(options: { sku: string }) {
-    console.log('IAP requestSubscription with', options, 'env:', iapEnvironment);
-    if (!hasIap() || isWeb) {
-      throw new Error('IAP_NOT_AVAILABLE');
-    }
+    const sku = (options as any)?.sku;
+    logIap('requestSubscription start', { sku, env: iapEnvironment });
+
     try {
-      return RNIap.requestSubscription(options);
+      iapDebugStore.lastSku = sku || '';
+      iapDebugStore.lastRequestVariant = 'none';
+      iapDebugStore.lastRequestError = '';
+      iapDebugStore.lastRequestAtMs = Date.now();
+
+      pushIapLocalLog({
+        loc: 'iap-wrapper:requestSubscription',
+        msg: 'entry',
+        data: {
+          sku,
+          platform: Platform.OS,
+          hasReqSub: typeof (RNIap as any)?.requestSubscription === 'function',
+          hasReqPurchase: typeof (RNIap as any)?.requestPurchase === 'function',
+          hasFetchProducts: typeof (RNIap as any)?.fetchProducts === 'function',
+          nativeAvailable: hasIap()
+        }
+      });
+
+      if (isWeb) {
+        throw new Error('IAP_NOT_AVAILABLE');
+      }
+      if (typeof sku !== 'string' || !sku.trim()) {
+        throw new Error('IAP_MISSING_PRODUCT_ID');
+      }
+      if (!RNIap) {
+        logIap('requestSubscription aborted: RNIap native module missing');
+        throw new Error('IAP_NATIVE_MODULE_UNAVAILABLE');
+      }
+      if (!iapWrapper.isAvailable()) {
+        logIap('requestSubscription aborted: IAP not available');
+        throw new Error('IAP_NOT_AVAILABLE');
+      }
+
+      // Use the correct API format for react-native-iap v14 with Nitro modules.
+      // For subscriptions, the format is: { type: 'subs', request: { ios: { sku } } }
+      // The listeners (purchaseUpdatedListener/purchaseErrorListener) handle the response.
+
+      if (typeof RNIap.requestPurchase === 'function') {
+        iapDebugStore.lastRequestVariant = 'sku-object';
+        logIap('requestSubscription: calling requestPurchase with Nitro format', { sku });
+        pushIapLocalLog({
+          loc: 'iap-wrapper:requestSubscription',
+          msg: 'calling requestPurchase (Nitro format)',
+          data: { sku, variant: 'sku-object' }
+        });
+
+        // Correct format for react-native-iap v14 Nitro modules on iOS
+        // This is the format documented at react-native-iap.hyo.dev
+        await (RNIap.requestPurchase as any)({
+          request: {
+            ios: {
+              sku,
+            },
+          },
+        });
+
+        pushIapLocalLog({
+          loc: 'iap-wrapper:requestSubscription',
+          msg: 'requestPurchase returned (StoreKit sheet should be showing)',
+          data: { sku }
+        });
+
+        return;
+      }
+
+      // Fallback: try legacy requestSubscription if requestPurchase doesn't exist
+      if (typeof RNIap.requestSubscription === 'function') {
+        iapDebugStore.lastRequestVariant = 'requestSubscription';
+        logIap('requestSubscription: calling legacy requestSubscription', { sku });
+        pushIapLocalLog({
+          loc: 'iap-wrapper:requestSubscription',
+          msg: 'calling legacy requestSubscription',
+          data: { sku, variant: 'requestSubscription' }
+        });
+
+        await (RNIap.requestSubscription as any)({ sku });
+
+        pushIapLocalLog({
+          loc: 'iap-wrapper:requestSubscription',
+          msg: 'requestSubscription returned',
+          data: { sku }
+        });
+
+        return;
+      }
+
+      throw new Error('IAP_NO_PURCHASE_API_AVAILABLE');
     } catch (error) {
+      iapDebugStore.lastRequestError = (error as any)?.message || String(error);
       console.error('IAP requestSubscription error:', error);
+      pushIapLocalLog({
+        loc: 'iap-wrapper:requestSubscription',
+        msg: 'error',
+        data: { sku, error: (error as any)?.message || String(error) }
+      });
       throw error;
     }
   },
 
   async getAvailablePurchases() {
-    if (!hasIap() || isWeb) {
-      console.log('IAP getAvailablePurchases skipped (IAP unavailable or web)');
+    if (isWeb) {
       return [];
     }
-    return RNIap.getAvailablePurchases();
+    if (RNIap && typeof RNIap.getAvailablePurchases === 'function') {
+      return RNIap.getAvailablePurchases();
+    }
+    return [];
   },
 
   async finishTransaction(options: { purchase: any; isConsumable: boolean }) {
-    if (!hasIap() || isWeb) {
-      console.log('IAP finishTransaction skipped (IAP unavailable or web)');
+    if (isWeb) {
       return;
     }
-    return RNIap.finishTransaction(options);
+    if (RNIap && typeof RNIap.finishTransaction === 'function') {
+      return RNIap.finishTransaction(options);
+    }
+    return;
   },
 
   // Listener methods
   purchaseUpdatedListener(callback: MockPurchaseUpdatedListener) {
-    if (!hasIap() || isWeb) {
-      console.log('IAP purchaseUpdatedListener skipped (IAP unavailable or web)');
-      return { remove: () => {} };
-    }
+    if (isWeb) return { remove: () => {} };
     try {
-      return RNIap.purchaseUpdatedListener(callback);
+      if (RNIap && typeof RNIap.purchaseUpdatedListener === 'function') {
+        return RNIap.purchaseUpdatedListener((purchase: MockPurchase) => {
+          logIap('purchaseUpdatedListener fired', {
+            productId: purchase?.productId,
+            hasReceipt: !!purchase?.transactionReceipt,
+          });
+          iapDebugStore.lastListenerEventAtMs = Date.now();
+          callback(purchase);
+        });
+      }
     } catch (error) {
       console.error('IAP purchaseUpdatedListener error:', error);
-      return { remove: () => {} };
     }
+    return { remove: () => {} };
   },
 
   purchaseErrorListener(callback: MockPurchaseErrorListener) {
-    if (!hasIap() || isWeb) {
-      console.log('IAP purchaseErrorListener skipped (IAP unavailable or web)');
-      return { remove: () => {} };
-    }
+    if (isWeb) return { remove: () => {} };
     try {
-      return RNIap.purchaseErrorListener(callback);
+      if (RNIap && typeof RNIap.purchaseErrorListener === 'function') {
+          return RNIap.purchaseErrorListener((error: any) => {
+            logIap('purchaseErrorListener fired', {
+              code: error?.code,
+              message: error?.message,
+            });
+            iapDebugStore.lastListenerEventAtMs = Date.now();
+            callback(error);
+          });
+      }
     } catch (error) {
       console.error('IAP purchaseErrorListener error:', error);
-      return { remove: () => {} };
     }
+    return { remove: () => {} };
   },
 };
 

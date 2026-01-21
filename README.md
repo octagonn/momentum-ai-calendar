@@ -7,6 +7,25 @@ This is a native cross-platform mobile app created with [Rork](https://rork.com)
 **Platform**: Native iOS & Android app, exportable to web
 **Framework**: Expo Router + React Native
 
+## 📚 Documentation
+
+Complete documentation for the Momentum app is available in the [`docs/`](./docs/) folder:
+
+- **[Setup Guides](./docs/setup/)** - Complete setup for Supabase, Auth, AI services, iOS purchases, and more
+- **[Features](./docs/features/)** - Premium system, AI goals, chat features, and day streaks
+- **[Fixes](./docs/fixes/)** - Bug fixes and performance improvements
+- **[Deployment](./docs/deployment/)** - App Store deployment and migration guides
+- **[Strategy](./docs/strategy/)** - Implementation plans and feature strategies
+- **[Guides](./docs/guides/)** - Reference guides and tutorials
+
+**Quick Links:**
+- 🚀 [Complete Setup Guide](./docs/setup/COMPLETE_SETUP_GUIDE.md) - Start here for initial setup
+- 💎 [Premium System](./docs/features/PREMIUM_SYSTEM.md) - Premium subscription documentation
+- 🤖 [AI Goals & Chat](./docs/features/AI_GOALS_AND_CHAT.md) - AI features documentation
+- 📱 [App Store Deployment](./docs/deployment/APP_STORE_DEPLOYMENT.md) - Deployment guide
+
+See [docs/README.md](./docs/README.md) for the complete documentation index.
+
 ## How can I edit this code?
 
 There are several ways of editing your native mobile application.

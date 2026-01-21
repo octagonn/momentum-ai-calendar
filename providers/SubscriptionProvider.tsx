@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { AppState } from 'react-native';
+import { AppState, Platform } from 'react-native';
+import Constants from 'expo-constants';
 import { useAuth } from './AuthProvider';
 import { useUser } from './UserProvider';
 import { subscriptionService, SubscriptionTier } from '../services/subscriptionService';
@@ -8,6 +9,7 @@ import { getItem, setItem } from '../lib/storage';
 
 interface SubscriptionContextType {
   isLoading: boolean;
+  isCheckingPurchases: boolean;
   isPremium: boolean;
   subscriptionTier: SubscriptionTier;
   showUpgradeModal: (trigger?: 'goal_limit' | 'ai_goal' | 'color_picker' | 'analytics' | 'general') => void;
@@ -40,6 +42,8 @@ export const SubscriptionProvider: React.FC<SubscriptionProviderProps> = ({ chil
   const { user: userProfile, refreshUser } = useUser();
   
   const [isLoading, setIsLoading] = useState(true);
+  const [autoRestoreAttempted, setAutoRestoreAttempted] = useState(false);
+  const [isCheckingPurchases, setIsCheckingPurchases] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [modalTrigger, setModalTrigger] = useState<'goal_limit' | 'ai_goal' | 'color_picker' | 'analytics' | 'general'>('general');
   const [mockPremiumStatus, setMockPremiumStatus] = useState<boolean>(false); // For testing when DB migration is missing
@@ -77,20 +81,29 @@ export const SubscriptionProvider: React.FC<SubscriptionProviderProps> = ({ chil
     if (!authUser) return;
     
     try {
+      setIsCheckingPurchases(true);
+      console.log('SubscriptionProvider: Checking subscription status...');
+      
       // Sync subscription status with RevenueCat
       await subscriptionService.syncSubscriptionStatus();
       
       // Refresh user profile to get updated subscription info
       await refreshUser();
+      
+      console.log('SubscriptionProvider: Subscription status check complete');
     } catch (error) {
-      console.error('Error checking subscription status:', error);
+      console.error('SubscriptionProvider: Error checking subscription status:', error);
+    } finally {
+      setIsCheckingPurchases(false);
     }
   }, [authUser, refreshUser]);
   
   useEffect(() => {
     if (authUser) {
+      setAutoRestoreAttempted(false);
       initializeSubscription();
     } else {
+      setAutoRestoreAttempted(false);
       setIsLoading(false);
     }
   }, [authUser]);
@@ -123,6 +136,46 @@ export const SubscriptionProvider: React.FC<SubscriptionProviderProps> = ({ chil
     });
     return () => sub.remove();
   }, [authUser, checkSubscriptionStatus]);
+
+  // Automatically attempt to restore purchases if Supabase shows free but Apple might have an active subscription
+  useEffect(() => {
+    if (!authUser) return;
+    if (autoRestoreAttempted) return;
+    if (isPremium) return;
+    if (mockPremiumStatus) return;
+    if (Platform.OS !== 'ios') return;
+    if (!subscriptionService.canUseNativeIap()) return;
+
+    let cancelled = false;
+
+    const attemptAutoRestore = async () => {
+      try {
+        console.log('SubscriptionProvider: Attempting automatic restore due to mismatch...');
+        setIsCheckingPurchases(true);
+        await subscriptionService.resyncPurchaseHistory();
+        await refreshUser();
+      } catch (error) {
+        console.error('SubscriptionProvider: Automatic restore failed:', error);
+      } finally {
+        if (!cancelled) {
+          setIsCheckingPurchases(false);
+          setAutoRestoreAttempted(true);
+        }
+      }
+    };
+
+    attemptAutoRestore();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    authUser,
+    autoRestoreAttempted,
+    isPremium,
+    mockPremiumStatus,
+    refreshUser,
+  ]);
 
   // In dev, we previously supported a mock premium. We no longer auto-load
   // mock state so DB remains the single source of truth. Uncomment for testing only.
@@ -162,8 +215,10 @@ export const SubscriptionProvider: React.FC<SubscriptionProviderProps> = ({ chil
     
     try {
       setIsLoading(true);
+      setIsCheckingPurchases(true);
+      console.log('SubscriptionProvider: Initializing subscription service...');
       
-      // Initialize subscription service
+      // Initialize subscription service (this will check purchase history internally)
       await subscriptionService.initialize(authUser.id);
       
       // Initialize feature gate
@@ -171,10 +226,13 @@ export const SubscriptionProvider: React.FC<SubscriptionProviderProps> = ({ chil
       
       // Check and sync subscription status
       await checkSubscriptionStatus();
+      
+      console.log('SubscriptionProvider: Subscription initialization complete');
     } catch (error) {
-      console.error('Error initializing subscription:', error);
+      console.error('SubscriptionProvider: Error initializing subscription:', error);
     } finally {
       setIsLoading(false);
+      setIsCheckingPurchases(false);
     }
   };
   
@@ -209,22 +267,32 @@ export const SubscriptionProvider: React.FC<SubscriptionProviderProps> = ({ chil
   const handleUpgradeSuccess = async () => {
     // First try to refresh subscription status from database
     await checkSubscriptionStatus();
-    
-    // If database doesn't have premium columns yet, use mock status for testing
-    if (!userProfile?.isPremium) {
-      console.log('SubscriptionProvider: Using mock premium status for testing');
-      setMockPremiumStatus(true);
-      
-      // Save persistent premium status
-      await savePersistentPremiumStatus(true);
-      
-      // Also update featureGate service to use mock premium status
-      featureGate.setMockPremiumOverride(true);
+
+    const nativeIapAvailable = subscriptionService.canUseNativeIap();
+    const appOwnership = (Constants as any)?.appOwnership;
+    const allowMockPremium =
+      !nativeIapAvailable && (appOwnership === 'expo' || Platform.OS === 'web');
+
+    if (nativeIapAvailable) {
+      console.log('SubscriptionProvider: Native IAP available; ensuring mock premium is disabled after upgrade.');
+      await resetPremiumStatus();
+      return;
     }
+
+    if (!allowMockPremium) {
+      console.log('SubscriptionProvider: Native IAP unavailable but mock premium is disabled for this build.');
+      return;
+    }
+
+    console.log('SubscriptionProvider: Using mock premium status (Expo Go / dev only)');
+    setMockPremiumStatus(true);
+    await savePersistentPremiumStatus(true);
+    featureGate.setMockPremiumOverride(true);
   };
   
   const value: SubscriptionContextType = {
     isLoading,
+    isCheckingPurchases,
     isPremium,
     subscriptionTier,
     showUpgradeModal,
