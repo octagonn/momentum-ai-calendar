@@ -41,3 +41,19 @@ yarn-error.*
 # typescript
 *.tsbuildinfo
 .vercel
+
+# IDE and editor files
+.cursor/
+*.log
+*.txt
+!README.txt
+
+# Documentation (local only)
+docs/
+
+# Debug and test files
+*debug*
+*test*.log
+
+# PowerShell scripts
+*.ps1
